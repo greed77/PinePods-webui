@@ -52,7 +52,7 @@ When adding a page or fixing a bug, add a test next to it. For a bug, first conf
 
 Stage 1 (done): login (password, MFA, OIDC, first-login preferences), home, podcasts, podcast page, episode page, player, queue panel and queue page.
 
-Stage 2: search and discover, feed, saved/collections, history, downloads, playlists.
+Stage 2 (done): Podcast Index / iTunes search with previews of podcasts you haven't subscribed to, library search, Discover (For You and trending), feed, history, saved and collections (including the "Add to collection" picker), downloads, and smart playlists (create, edit, delete, play from top).
 
 Stage 3: people, YouTube, user settings, admin settings.
 

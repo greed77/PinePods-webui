@@ -11,6 +11,7 @@
   import QueuePanel from '$lib/components/QueuePanel.svelte';
   import AudioPlayer from '$lib/player/AudioPlayer.svelte';
   import Loading from '$lib/components/Loading.svelte';
+  import CollectionPickerModal from '$lib/components/CollectionPickerModal.svelte';
 
   let { children } = $props();
   let ready = $state(false);
@@ -42,6 +43,7 @@
   <QueuePanel />
   <AppDrawer />
   <AudioPlayer />
+  <CollectionPickerModal />
 {:else}
   <Loading />
 {/if}

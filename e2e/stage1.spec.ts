@@ -1,13 +1,6 @@
 // End-to-end checks for stage 1, run against the mocked API in mock-api.ts.
-import { expect, test, type Page } from '@playwright/test';
+import { expect, login, signedIn, test } from './fixtures';
 import { mockApi } from './mock-api';
-
-async function login(page: Page, password = 'secret') {
-  await page.goto('/');
-  await page.locator('#username').fill('test_dev');
-  await page.locator('#current-password').fill(password);
-  await page.getByRole('button', { name: 'Login' }).click();
-}
 
 test.describe('login', () => {
   test('password login lands on home and stores an upstream-compatible session', async ({ page }) => {
@@ -62,19 +55,6 @@ test.describe('login', () => {
     await expect(page.locator('#username')).toBeVisible();
     expect(await page.evaluate(() => localStorage.getItem('userAuthState'))).toBeNull();
   });
-});
-
-// Signed-in tests get the mock API installed and a logged-in page.
-const signedIn = test.extend<{ api: Awaited<ReturnType<typeof mockApi>> }>({
-  api: [
-    async ({ page }, use) => {
-      const api = await mockApi(page);
-      await login(page);
-      await expect(page).toHaveURL(/\/home$/);
-      await use(api);
-    },
-    { auto: true }
-  ]
 });
 
 signedIn.describe('signed in', () => {

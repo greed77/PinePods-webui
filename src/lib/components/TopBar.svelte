@@ -4,7 +4,7 @@
   // Search results, remote devices and the notification center come in stage 2.
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { ui } from '$lib/stores/app.svelte';
+  import { toast, ui } from '$lib/stores/app.svelte';
   import { queue } from '$lib/stores/queue.svelte';
   import { t } from '$lib/i18n/index.svelte';
 
@@ -44,7 +44,8 @@
     expanded = false;
     const q = value.trim();
     if (!q) return;
-    goto(`/search?q=${encodeURIComponent(q)}&index=${index}`);
+    if (index === 'youtube') return toast.info('YouTube search comes with the YouTube pages in stage 3.');
+    goto(`/search_results?q=${encodeURIComponent(q)}&index=${index}`);
   }
 
   function pick(v: typeof index) {

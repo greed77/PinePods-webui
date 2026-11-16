@@ -90,13 +90,19 @@ function silentWav(seconds = 3, rate = 8000) {
 export async function mockApi(page: Page, opts: MockOptions = {}) {
   const calls: Call[] = [];
   const queue: number[] = [];
+  const saved = new Set<number>();
+  const collections: any[] = [
+    { collection_id: 1, user_id: 3, name: 'Saved', description: null, is_default: true, icon: 'ph-bookmark-simple', episode_count: 0, auto_add_categories: null }
+  ];
+  const playlists: any[] = [];
+  let nextId = 100;
   let firstLoginDone = opts.firstLoginDone ?? true;
   const wav = silentWav();
 
   const json = (route: Route, body: unknown, status = 200) =>
     route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
-  const withFlags = (e: (typeof EPISODES)[number]) => ({ ...e, queued: queue.includes(e.episodeid) });
+  const withFlags = (e: (typeof EPISODES)[number]) => ({ ...e, queued: queue.includes(e.episodeid), saved: saved.has(e.episodeid) });
 
   await page.route('https://media.test/**', (route) => route.fulfill({ status: 200, contentType: 'audio/wav', body: wav }));
   // Artwork and other third-party requests: answer empty so nothing leaves the machine.
@@ -180,8 +186,6 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
           top_podcasts: PODCASTS,
           weekly_stats: { episodes_completed: 1, seconds_listened: 3900 }
         });
-      case 'get_playlists':
-        return json(route, { playlists: [] });
       case 'return_pods/3':
         return json(route, { pods: PODCASTS });
       case 'get_podcast_details': {
@@ -255,7 +259,77 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
         queue.splice(0, queue.length, ...queue.filter((x) => x !== body.episode_id));
         return json(route, { detail: 'Episode marked as completed' });
       case 'save_episode':
+        saved.add(body.episode_id);
         return json(route, { detail: 'Episode saved!' });
+      case 'remove_saved_episode':
+        saved.delete(body.episode_id);
+        return json(route, { detail: 'Removed' });
+
+      // ---- stage 2 ----
+      case 'return_episodes/3': {
+        const off = Number(query.offset ?? 0),
+          lim = Number(query.limit ?? 50);
+        return json(route, { episodes: EPISODES.slice(off, off + lim).map(withFlags), total: EPISODES.length });
+      }
+      case 'user_history/3': {
+        let h = EPISODES.filter((e) => e.episodeid === 101 || e.episodeid === 102).map((e) => ({ ...withFlags(e), listendate: '2026-11-16T00:00:00' }));
+        if (query.filter === 'completed') h = h.filter((e) => e.completed);
+        return json(route, { data: h, total: h.length });
+      }
+      case 'collections/user/3':
+        return json(route, { collections });
+      case 'collections/categories/3':
+        return json(route, { categories: ['Arts'] });
+      case 'collections/create': {
+        const c = { collection_id: nextId++, user_id: 3, name: body.name, description: body.description, is_default: false, icon: body.icon, episode_count: 0, auto_add_categories: body.auto_add_categories };
+        collections.push(c);
+        return json(route, { detail: 'Collection created', collection_id: c.collection_id });
+      }
+      case 'saved_episode_list/3': {
+        const s = EPISODES.filter((e) => saved.has(e.episodeid)).map((e) => ({ ...withFlags(e), saved: true }));
+        return json(route, { saved_episodes: s, total: s.length });
+      }
+      case 'podcast_download_summary/3':
+        return json(route, { podcasts: [] });
+      case 'get_playlists':
+        return json(route, { playlists });
+      case 'create_playlist': {
+        const pl = { ...body, playlist_id: nextId++, episode_count: 0, is_system_playlist: false };
+        playlists.push(pl);
+        return json(route, { detail: 'Playlist created', playlist_id: pl.playlist_id });
+      }
+      case 'get_playlist_episodes': {
+        const pl = playlists.find((x) => x.playlist_id === Number(query.playlist_id));
+        return json(route, { episodes: EPISODES.slice(0, 2).map(withFlags), total: 2, playlist_info: { ...pl, episode_count: 2 } });
+      }
+      case 'search_data': {
+        const q = String(body.search_term ?? '').toLowerCase();
+        const hits = EPISODES.filter((e) => e.episodetitle.toLowerCase().includes(q)).map(withFlags);
+        return json(route, { data: hits, total: hits.length });
+      }
+      case 'proxy_search':
+        return json(route, {
+          feeds: [
+            { id: 555, title: 'Gamma Radio', url: 'https://example.com/gamma.xml', author: 'G', description: 'Gamma desc', image: '', link: '', categories: { '1': 'Arts' }, explicit: false, episodeCount: 2 }
+          ]
+        });
+      case 'check_podcast':
+        return json(route, { exists: PODCASTS.some((p) => p.feedurl === query.podcast_url) });
+      case 'fetch_podcast_feed':
+        return json(route, {
+          episodes: [
+            { title: 'Gamma Ep 1', description: '<p>one</p>', pub_date: '2026-11-15T00:00:00+00:00', artwork: '', enclosure_url: 'https://media.test/901.wav', duration: 3, is_video: false },
+            { title: 'Gamma Ep 2', description: '<p>two</p>', pub_date: '2026-11-14T00:00:00+00:00', artwork: '', enclosure_url: 'https://media.test/902.wav', duration: 3, is_video: false }
+          ]
+        });
+      case 'recommendations':
+        return json(route, []);
+      case 'proxy_categories':
+        return json(route, { feeds: [{ id: 1, name: 'Arts' }] });
+      case 'proxy_trending':
+        return json(route, { feeds: [] });
+      case 'add_podcast':
+        return json(route, { success: true, podcast_id: 99, first_episode_id: 0 });
       default:
         // Bookkeeping endpoints (history, listen time, play count...) just succeed.
         return json(route, { detail: 'ok' });
@@ -265,6 +339,8 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
   return {
     calls,
     queue,
+    saved,
+    playlists,
     /** Calls to an /api/data/<name> endpoint. */
     called: (name: string) => calls.filter((c) => c.path.replace(/^\/api\/data\//, '') === name)
   };

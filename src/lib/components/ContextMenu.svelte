@@ -10,6 +10,7 @@
   import type { Episode } from '$lib/api/endpoints';
   import * as A from '$lib/episodeActions';
   import { t } from '$lib/i18n/index.svelte';
+  import { collectionPicker } from '$lib/stores/collectionPicker.svelte';
 
   export type PageType = 'default' | 'queue' | 'saved' | 'downloads';
 
@@ -118,6 +119,8 @@
   </li>
   {#if pageType === 'queue'}
     <li class="dropdown-option" onclick={act(() => A.removeFromQueue(episode))}>{t('context_menu_button.remove_from_queue')}</li>
+  {:else}
+    <li class="dropdown-option" onclick={act(() => collectionPicker.show(episode))}>{t('collections.add_to_collection')}</li>
   {/if}
   <li class="dropdown-option" onclick={act(() => A.toggleDownload(episode))}>
     {downloaded ? t('context_menu_button.remove_downloaded_episode') : t('context_menu_button.download_episode')}

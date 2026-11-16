@@ -386,3 +386,285 @@ export function streamUrl(ep: Episode, viaServer = false) {
 }
 
 export const proxiedImage = (url: string) => `${session.serverName}/api/proxy/image?url=${encodeURIComponent(url)}`;
+
+// ---------- Stage 2: lists, collections, downloads, playlists, search, discover ----------
+
+export interface Page {
+  episodes: Episode[];
+  total: number;
+}
+
+export const sortParams = (s: string): { sort_by: string; sort_order: string } => {
+  const m: Record<string, [string, string]> = {
+    oldest: ['date', 'asc'],
+    shortest: ['duration', 'asc'],
+    longest: ['duration', 'desc'],
+    title_az: ['title', 'asc'],
+    title_za: ['title', 'desc']
+  };
+  const [sort_by, sort_order] = m[s] ?? ['date', 'desc'];
+  return { sort_by, sort_order };
+};
+
+export async function getRecentEpisodes(limit: number, offset: number): Promise<Page> {
+  const d = await unwrap<{ episodes: any[]; total: number }>(
+    api().GET('/api/data/return_episodes/{user_id}', { params: { path: { user_id: uid() }, query: { limit, offset } } })
+  );
+  return { episodes: (d.episodes ?? []).map(normEpisode), total: Number(d.total ?? 0) };
+}
+
+export async function getHistory(limit: number, offset: number, sort: string, filter: string): Promise<Page> {
+  const d = await unwrap<{ data: any[]; total: number }>(
+    api().GET('/api/data/user_history/{user_id}', {
+      params: { path: { user_id: uid() }, query: { limit, offset, ...sortParams(sort), filter } as any }
+    })
+  );
+  return { episodes: (d.data ?? []).map(normEpisode), total: Number(d.total ?? 0) };
+}
+
+export interface Collection {
+  collection_id: number;
+  name: string;
+  description?: string | null;
+  is_default: boolean;
+  icon: string;
+  episode_count: number;
+  auto_add_categories?: string[] | null;
+}
+
+export const getCollections = async () =>
+  (await unwrap<{ collections: Collection[] }>(api().GET('/api/data/collections/user/{user_id}', { params: { path: { user_id: uid() } } })))
+    .collections ?? [];
+
+export const getCollectionCategories = async () =>
+  (await unwrap<{ categories: string[] }>(api().GET('/api/data/collections/categories/{user_id}', { params: { path: { user_id: uid() } } })))
+    .categories ?? [];
+
+export async function getSavedEpisodes(limit: number, offset: number, sort: string, filter: string): Promise<Page> {
+  const d = await unwrap<{ saved_episodes: any[]; total: number }>(
+    api().GET('/api/data/saved_episode_list/{user_id}', { params: { path: { user_id: uid() }, query: { limit, offset, ...sortParams(sort), filter } } })
+  );
+  return { episodes: (d.saved_episodes ?? []).map(normEpisode), total: Number(d.total ?? 0) };
+}
+
+export async function getCollectionEpisodes(collection_id: number, limit: number, offset: number, sort: string, filter: string): Promise<Page> {
+  const d = await unwrap<{ saved_episodes: any[]; total: number }>(
+    api().GET('/api/data/collections/{collection_id}/episodes', {
+      params: { path: { collection_id }, query: { limit, offset, ...sortParams(sort), filter } }
+    })
+  );
+  return { episodes: (d.saved_episodes ?? []).map(normEpisode), total: Number(d.total ?? 0) };
+}
+
+export interface CollectionForm {
+  name: string;
+  description?: string | null;
+  icon?: string;
+  auto_add_categories?: string[];
+  backfill?: boolean;
+}
+export const createCollection = (f: CollectionForm) =>
+  unwrap<{ detail: string; collection_id: number }>(api().POST('/api/data/collections/create', { body: { user_id: uid(), ...f } }));
+export const updateCollection = (collection_id: number, f: CollectionForm) =>
+  unwrap(api().PATCH('/api/data/collections/{collection_id}', { params: { path: { collection_id } }, body: f }));
+export const deleteCollection = (collection_id: number) =>
+  unwrap(api().DELETE('/api/data/collections/{collection_id}', { params: { path: { collection_id } } }));
+export const addToCollection = (collection_id: number, ep: Pick<Episode, 'episodeid' | 'is_youtube'>) =>
+  unwrap(
+    api().POST('/api/data/collections/{collection_id}/add_episode', {
+      params: { path: { collection_id } },
+      body: { user_id: uid(), episode_id: ep.episodeid, is_youtube: ep.is_youtube }
+    })
+  );
+export const removeFromCollection = (collection_id: number, ep: Pick<Episode, 'episodeid' | 'is_youtube'>) =>
+  unwrap(
+    api().POST('/api/data/collections/{collection_id}/remove_episode', {
+      params: { path: { collection_id } },
+      body: { user_id: uid(), episode_id: ep.episodeid, is_youtube: ep.is_youtube }
+    })
+  );
+export const bulkAddToCollection = (collection_id: number, episodes: [number, boolean][]) =>
+  unwrap(api().POST('/api/data/collections/bulk_add', { body: { user_id: uid(), collection_id, episodes: episodes as any } }));
+export const getEpisodeCollections = async (ep: Pick<Episode, 'episodeid' | 'is_youtube'>) =>
+  (
+    await unwrap<{ collection_ids: number[] }>(
+      api().GET('/api/data/episode_collections/{user_id}/{episode_id}', {
+        params: { path: { user_id: uid(), episode_id: ep.episodeid }, query: { is_youtube: ep.is_youtube } }
+      })
+    )
+  ).collection_ids ?? [];
+
+export interface DownloadSummary {
+  podcastid: number;
+  podcastname: string;
+  artworkurl?: string | null;
+  episode_count?: number;
+  [k: string]: unknown;
+}
+export const getDownloadSummary = async (search = '', filter = 'all') =>
+  (
+    await unwrap<{ podcasts: DownloadSummary[] }>(
+      api().GET('/api/data/podcast_download_summary/{user_id}', { params: { path: { user_id: uid() }, query: { search, filter } } })
+    )
+  ).podcasts ?? [];
+
+export async function getPodcastDownloads(podcast_id: number, limit: number, offset: number, sort: string, filter: string, search: string): Promise<Page> {
+  const d = await unwrap<{ episodes: any[]; total: number }>(
+    api().GET('/api/data/podcast_downloads_paged/{user_id}/{podcast_id}', {
+      params: { path: { user_id: uid(), podcast_id }, query: { limit, offset, ...sortParams(sort), filter, search } }
+    })
+  );
+  return { episodes: (d.episodes ?? []).map((e) => normEpisode({ ...e, downloaded: true })), total: Number(d.total ?? 0) };
+}
+
+export const bulkDeleteDownloads = (episode_ids: number[]) =>
+  unwrap<{ message: string }>(api().POST('/api/data/bulk_delete_downloaded_episodes', { body: { episode_ids, user_id: uid() } }));
+
+export interface PlaylistFull extends Playlist {
+  podcast_ids?: number[] | null;
+  include_unplayed: boolean;
+  include_partially_played: boolean;
+  include_played: boolean;
+  play_progress_min?: number | null;
+  play_progress_max?: number | null;
+  time_filter_hours?: number | null;
+  min_duration?: number | null;
+  max_duration?: number | null;
+  sort_order: string;
+  group_by_podcast: boolean;
+  max_episodes?: number | null;
+  preview_episodes?: any[];
+}
+export type PlaylistForm = Omit<PlaylistFull, 'playlist_id' | 'episode_count' | 'is_system_playlist' | 'preview_episodes'>;
+
+export const getPlaylistsFull = async () =>
+  (await unwrap<{ playlists: PlaylistFull[] }>(api().GET('/api/data/get_playlists', { params: { query: { user_id: uid() } } }))).playlists ?? [];
+export const createPlaylist = (f: PlaylistForm) =>
+  unwrap<{ detail: string; playlist_id: number }>(api().POST('/api/data/create_playlist', { body: { user_id: uid(), ...f } as any }));
+export const updatePlaylist = (playlist_id: number, f: PlaylistForm) =>
+  unwrap<{ detail: string }>(api().PATCH('/api/data/update_playlist', { body: { user_id: uid(), playlist_id, ...f } as any }));
+export const deletePlaylist = (playlist_id: number) =>
+  unwrap(api().DELETE('/api/data/delete_playlist', { body: { user_id: uid(), playlist_id } }));
+
+export async function getPlaylistEpisodes(playlist_id: number, limit: number, offset: number) {
+  const d = await unwrap<{ episodes: any[]; total?: number; playlist_info?: any }>(
+    api().GET('/api/data/get_playlist_episodes', { params: { query: { user_id: uid(), playlist_id, limit, offset } } })
+  );
+  return { episodes: (d.episodes ?? []).map(normEpisode), total: Number(d.total ?? d.episodes?.length ?? 0), info: d.playlist_info ?? null };
+}
+
+/** Library search across the user's subscribed episodes. */
+export async function searchLibrary(search_term: string, categories: string[], limit: number, offset: number, filter?: string): Promise<Page> {
+  const d = await unwrap<{ data: any[]; total: number }>(
+    api().POST('/api/data/search_data', { params: { query: { limit, offset, filter } }, body: { search_term, user_id: uid(), categories } })
+  );
+  return { episodes: (d.data ?? []).map(normEpisode), total: Number(d.total ?? 0) };
+}
+
+/** A podcast from Podcast Index / iTunes search, in one shape (upstream UnifiedPodcast). */
+export interface SearchPodcast {
+  id: number;
+  indexId: number;
+  title: string;
+  url: string;
+  author: string;
+  description: string;
+  image: string;
+  link: string;
+  categories: Record<string, string>;
+  explicit: boolean;
+  episodeCount: number;
+}
+
+function fromIndex(f: any): SearchPodcast {
+  return {
+    id: f.id,
+    indexId: f.id,
+    title: f.title ?? '',
+    url: f.url ?? '',
+    author: f.author ?? '',
+    description: f.description ?? '',
+    image: f.image || f.artwork || '',
+    link: f.link ?? '',
+    categories: f.categories ?? {},
+    explicit: !!f.explicit,
+    episodeCount: f.episodeCount ?? 0
+  };
+}
+
+function fromItunes(r: any): SearchPodcast {
+  return {
+    id: r.trackId,
+    indexId: 0,
+    title: r.trackName ?? '',
+    url: r.feedUrl ?? '',
+    author: r.artistName ?? '',
+    description: 'Descriptions not provided by iTunes',
+    image: r.artworkUrl100 ?? '',
+    link: r.collectionViewUrl ?? '',
+    categories: Object.fromEntries((r.genres ?? []).map((g: string, i: number) => [String(i), g])),
+    explicit: r.collectionExplicitness === 'explicit',
+    episodeCount: r.trackCount ?? 0
+  };
+}
+
+export async function searchPodcasts(query: string, index: 'podcast_index' | 'itunes'): Promise<SearchPodcast[]> {
+  const d = await unwrap<any>(api().GET('/api/data/proxy_search', { params: { query: { query, index } } }));
+  if (Array.isArray(d.feeds)) return d.feeds.map(fromIndex);
+  if (Array.isArray(d.results)) return d.results.filter((r: any) => r.feedUrl).map(fromItunes);
+  return [];
+}
+
+export const getTrending = async (cat?: string, max = 30) =>
+  ((await unwrap<{ feeds: any[] }>(api().GET('/api/data/proxy_trending', { params: { query: { max, cat } } }))).feeds ?? []).map(fromIndex);
+
+export const getCategories = async () =>
+  (await unwrap<{ feeds: { id: number; name: string }[] }>(api().GET('/api/data/proxy_categories'))).feeds ?? [];
+
+export interface Recommendation {
+  podcastindexid?: number | null;
+  title: string;
+  author?: string | null;
+  image?: string | null;
+  description?: string | null;
+  feedurl?: string | null;
+  categories: Record<string, string>;
+  score: number;
+  reason: string;
+}
+export const getRecommendations = (refresh = false, limit = 20) =>
+  unwrap<Recommendation[]>(api().GET('/api/data/recommendations', { params: { query: { refresh, limit } } }));
+
+export const checkPodcast = async (podcast_name: string, podcast_url: string) =>
+  (
+    await unwrap<{ exists: boolean }>(
+      api().GET('/api/data/check_podcast', { params: { query: { user_id: uid(), podcast_name, podcast_url } } })
+    )
+  ).exists;
+
+export async function getPodcastIdByFeed(podcast_feed: string, podcast_title: string) {
+  const d = await unwrap<any>(api().GET('/api/data/get_podcast_id', { params: { query: { user_id: uid(), podcast_feed, podcast_title } } }));
+  return Number(typeof d === 'object' && d ? (d.podcast_id ?? 0) : d) || 0;
+}
+
+/** Episodes straight from a feed the user isn't subscribed to. */
+export async function fetchFeedEpisodes(feedUrl: string, podcastName: string): Promise<Episode[]> {
+  const d = await unwrap<{ episodes: any[] }>(api().GET('/api/data/fetch_podcast_feed', { params: { query: { podcast_feed: feedUrl } } }));
+  return (d.episodes ?? []).map((e) =>
+    normEpisode({
+      episodeid: 0,
+      podcastname: podcastName,
+      episodetitle: e.title,
+      episodedescription: e.description || e.content || '',
+      episodepubdate: e.pub_date,
+      episodeartwork: e.artwork,
+      episodeurl: e.enclosure_url,
+      episodeduration: e.duration,
+      is_video: e.is_video,
+      feedurl: feedUrl
+    })
+  );
+}
+
+export const removePodcastByName = (podcast_name: string, podcast_url: string) =>
+  unwrap(api().POST('/api/data/remove_podcast', { body: { user_id: uid(), podcast_name, podcast_url } }));

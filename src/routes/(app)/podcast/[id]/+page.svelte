@@ -3,17 +3,16 @@
   // (or compact mobile header), server-side search/sort/filter with paging, select
   // mode with bulk actions, download-all and unsubscribe. Per-podcast settings,
   // RSS link, people, merge and funding links come in a later stage.
-  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import * as E from '$lib/api/endpoints';
   import type { Episode, PodcastDetails } from '$lib/api/endpoints';
   import { episodeStatus, toast, ui } from '$lib/stores/app.svelte';
-  import { sanitize } from '$lib/util/format';
+  import { getPref, setPref } from '$lib/util/prefs';
   import { t } from '$lib/i18n/index.svelte';
   import TopBar from '$lib/components/TopBar.svelte';
   import Loading from '$lib/components/Loading.svelte';
-  import FallbackImage from '$lib/components/FallbackImage.svelte';
+  import PodcastHeader from '$lib/components/PodcastHeader.svelte';
   import EpisodeListItem from '$lib/components/EpisodeListItem.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
@@ -28,25 +27,8 @@
   let subscribed = $state(true);
   let busy = $state(false);
   let modal = $state<'delete' | 'download' | null>(null);
-  let descExpanded = $state(false);
-  let isMobile = $state(false);
 
   // Filters, remembered per podcast like upstream (`podcast_{id}_sort_preference`).
-  const prefKey = (k: string) => `${k}_sort_preference`;
-  const getPref = (k: string, d: string) => {
-    try {
-      return localStorage.getItem(prefKey(k)) ?? d;
-    } catch {
-      return d;
-    }
-  };
-  const setPref = (k: string, v: string) => {
-    try {
-      localStorage.setItem(prefKey(k), v);
-    } catch {
-      /* ignore */
-    }
-  };
   let sort = $state('newest');
   let completedFilter = $state<'show_all' | 'show_only' | 'hide'>('show_all');
   let inProgress = $state(false);
@@ -54,13 +36,6 @@
   let debounced = $state('');
   let selecting = $state(false);
   let selected = $state(new Set<number>());
-
-  onMount(() => {
-    const check = () => (isMobile = innerWidth < 768);
-    check();
-    addEventListener('resize', check);
-    return () => removeEventListener('resize', check);
-  });
 
   // Load details whenever the podcast changes.
   $effect(() => {
@@ -85,17 +60,11 @@
     return () => clearTimeout(timer);
   });
 
-  const sortParams = (s: string): [string, string] =>
-    (({ oldest: ['date', 'asc'], shortest: ['duration', 'asc'], longest: ['duration', 'desc'], title_az: ['title', 'asc'], title_za: ['title', 'desc'] }) as Record<string, [string, string]>)[s] ?? [
-      'date',
-      'desc'
-    ];
   const filterParam = () =>
     inProgress ? 'in_progress' : completedFilter === 'show_only' ? 'completed' : completedFilter === 'hide' ? 'incomplete' : 'all';
 
   async function fetchPage(offset: number) {
-    const [sort_by, sort_order] = sortParams(sort);
-    return E.getPodcastEpisodes(id, { limit: PAGE, offset, sort_by, sort_order, search: debounced, filter: filterParam() });
+    return E.getPodcastEpisodes(id, { limit: PAGE, offset, ...E.sortParams(sort), search: debounced, filter: filterParam() });
   }
 
   // Reload the list when the podcast or any filter changes, or after a feed refresh.
@@ -140,14 +109,6 @@
     return () => io.disconnect();
   });
 
-  const categories = $derived.by(() => {
-    const cats = details?.categories ?? {};
-    const seen = new Set<string>();
-    return Object.entries(cats)
-      .sort(([a], [b]) => (isNaN(+a) || isNaN(+b) ? a.localeCompare(b) : +a - +b))
-      .map(([, n]) => n.trim())
-      .filter((n) => n && !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()));
-  });
   const isVideo = $derived(episodes.some((e) => e.is_video));
   const isYoutube = $derived(!!details?.isyoutubechannel);
 
@@ -236,7 +197,6 @@
     }
   }
 
-  const openUrl = (u?: string) => u && window.open(u, '_blank', 'noopener');
 </script>
 
 <div class="main-container">
@@ -265,102 +225,7 @@
   {#if loading}
     <Loading />
   {:else if details}
-    {@const d = details}
-    {#if isMobile}
-      <div class="mobile-layout ep-mobile-pod-header">
-        <div class="ep-mobile-header">
-          <FallbackImage src={d.artworkurl} alt="Cover for {d.podcastname}" class="ep-mobile-art rounded-corners" />
-          <div class="ep-mobile-meta">
-            <div class="flex items-center gap-2">
-              <h2 class="ep-mobile-title">{d.podcastname}</h2>
-              {#if isVideo}
-                <span class="inline-flex items-center gap-1 bg-opacity-80 bg-gray-700 text-white text-xs px-1.5 py-0.5 rounded-full">
-                  <i class="ph ph-television"></i>{t('episodes_layout.video')}
-                </span>
-              {/if}
-            </div>
-            <p class="ep-mobile-podcast-name">{d.author}</p>
-            <p class="ep-mobile-subinfo">
-              {t('episodes_layout.episode_count')}{d.episodecount} · {t('episodes_layout.explicit')}{d.explicit ? t('episodes_layout.yes') : t('episodes_layout.no')}
-            </p>
-          </div>
-        </div>
-        <div class={subscribed ? 'ep-mobile-actions' : 'ep-mobile-actions ep-mobile-actions-sparse'}>
-          <button onclick={toggleSubscription} title="Add or remove podcast" class="ep-mobile-action-btn ep-mobile-action-play">
-            <i class="ph {busy ? 'ph-spinner animate-spin' : subscribed ? 'ph-trash' : 'ph-plus-circle'} text-2xl"></i>
-          </button>
-          <button onclick={() => openUrl(d.websiteurl)} title="Visit podcast website" class="ep-mobile-action-btn"><i class="ph ph-globe text-2xl"></i></button>
-          {#if subscribed}
-            <button onclick={() => (modal = 'download')} title="Download all episodes" class="ep-mobile-action-btn"><i class="ph ph-download text-2xl"></i></button>
-          {/if}
-        </div>
-        <div class="ep-mobile-desc-section">
-          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-          <div class="item-header-description {descExpanded ? 'desc-expanded' : 'desc-collapsed'}" onclick={() => (descExpanded = !descExpanded)}>
-            {@html sanitize(d.description)}
-            <button class="toggle-desc-btn" aria-label="Toggle description"></button>
-          </div>
-        </div>
-        {#if categories.length}
-          <div class="ep-mobile-categories">
-            {#each categories as c}<span class="category-box">{c}</span>{/each}
-          </div>
-        {/if}
-      </div>
-    {:else}
-      <div class="pd-banner">
-        <div class="pd-banner-backdrop" style="background-image: url('{d.artworkurl}');"></div>
-        <div class="pd-banner-scrim"></div>
-        <div class="pd-banner-inner">
-          <div class="pd-banner-top">
-            <FallbackImage src={d.artworkurl} alt="Cover for {d.podcastname}" class="pd-banner-cover" />
-            <div class="pd-banner-head">
-              <div class="pd-eyebrow">
-                <i class="ph ph-microphone-stage"></i>
-                <span>{categories[0] ? `${t('episodes_layout.podcast')} · ${categories[0]}` : t('episodes_layout.podcast')}</span>
-              </div>
-              <div class="pd-banner-title-row">
-                <h2 class="pd-banner-title">{d.podcastname}</h2>
-                {#if isVideo}
-                  <span class="inline-flex items-center gap-1 bg-opacity-80 bg-gray-700 text-white text-xs px-2 py-1 rounded-full self-center">
-                    <i class="ph ph-television"></i>{t('episodes_layout.video')}
-                  </span>
-                {/if}
-              </div>
-              <div class="pd-banner-meta">
-                <span class="pd-author">{t('episodes_layout.authors')}<strong>{d.author}</strong></span>
-                <span class="pd-dot">•</span>
-                <span class="pd-stat"><i class="ph ph-stack"></i>{t('episodes_layout.episode_count')}{d.episodecount}</span>
-                <span class="pd-dot">•</span>
-                <span class="pd-stat">{t('episodes_layout.explicit')}{d.explicit ? t('episodes_layout.yes') : t('episodes_layout.no')}</span>
-              </div>
-              <div class="pd-banner-actions">
-                <button onclick={toggleSubscription} title={t('episodes_layout.add_remove_podcast')} class={subscribed ? 'pd-btn-primary is-subscribed' : 'pd-btn-primary'}>
-                  <i class="ph {busy ? 'ph-spinner animate-spin' : subscribed ? 'ph-trash' : 'ph-plus-circle'} text-2xl"></i>
-                  <span>{busy ? t('episodes_layout.subscribing') : subscribed ? t('episodes_layout.subscribed') : t('episodes_layout.subscribe')}</span>
-                </button>
-                {#if subscribed}
-                  <button onclick={() => (modal = 'download')} title={t('episodes_layout.download_all_episodes')} class="pd-icon-btn">
-                    <i class="ph ph-download text-2xl"></i>
-                  </button>
-                {/if}
-                <button onclick={() => openUrl(d.websiteurl)} title="Visit external podcast website" class="pd-icon-btn"><i class="ph ph-globe text-2xl"></i></button>
-              </div>
-            </div>
-          </div>
-          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-          <div class="item-header-description {descExpanded ? 'desc-expanded' : 'desc-collapsed'} pd-banner-desc" onclick={() => (descExpanded = !descExpanded)}>
-            {@html sanitize(d.description)}
-            <button class="toggle-desc-btn" aria-label="Toggle description"></button>
-          </div>
-          {#if categories.length}
-            <div class="pd-banner-cats">
-              {#each categories as c}<span class="category-box">{c}</span>{/each}
-            </div>
-          {/if}
-        </div>
-      </div>
-    {/if}
+    <PodcastHeader podcast={details} {subscribed} {busy} {isVideo} ontoggle={toggleSubscription} ondownload={() => (modal = 'download')} />
 
     <div class="pfb-section">
       <div class="pfb-bar">
