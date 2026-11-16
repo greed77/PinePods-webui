@@ -117,6 +117,7 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
   const ytSubscribed = new Set<string>();
   let syncServerEnabled = false;
   let theme = 'Nordic';
+  const state = { verifyStatus: 200 };
   const wav = silentWav();
 
   const json = (route: Route, body: unknown, status = 200) =>
@@ -171,7 +172,7 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
     if (path.startsWith('/api/data/stream/')) return route.fulfill({ status: 200, contentType: 'audio/wav', body: wav });
     switch (p) {
       case 'verify_key':
-        return json(route, { status: 'success' });
+        return state.verifyStatus === 200 ? json(route, { status: 'success' }) : json(route, { detail: 'error' }, state.verifyStatus);
       case 'get_user':
         return json(route, { status: 'success', retrieved_id: 3 });
       case 'user_details_id/3':
@@ -476,6 +477,8 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
     queue,
     saved,
     playlists,
+    /** Status verify_key answers with (200 = key valid). */
+    state,
     /** Calls to an /api/data/<name> endpoint. */
     called: (name: string) => calls.filter((c) => c.path.replace(/^\/api\/data\//, '') === name)
   };

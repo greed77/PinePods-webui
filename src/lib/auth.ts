@@ -1,5 +1,6 @@
 // Login flow, ported from upstream requests/login_requests.rs and pages/login.rs.
 import * as E from '$lib/api/endpoints';
+import { ApiError } from '$lib/api/client';
 import { session } from '$lib/stores/session.svelte';
 import { prefs, ui } from '$lib/stores/app.svelte';
 import { changeTheme } from '$lib/theme/themes.js';
@@ -133,3 +134,8 @@ function b64url(bytes: Uint8Array) {
 export function logout() {
   session.clear();
 }
+
+/** True when the server rejected the stored key, as opposed to a network error,
+ *  a server hiccup, or a request aborted by leaving the page. Only then should the
+ *  stored session be dropped. */
+export const keyRejected = (e: unknown) => e instanceof ApiError && (e.status === 401 || e.status === 403);

@@ -6,7 +6,7 @@
   import { page } from '$app/state';
   import { session } from '$lib/stores/session.svelte';
   import * as E from '$lib/api/endpoints';
-  import { loadUserSettings } from '$lib/auth';
+  import { keyRejected, loadUserSettings } from '$lib/auth';
   import AppDrawer from '$lib/components/AppDrawer.svelte';
   import QueuePanel from '$lib/components/QueuePanel.svelte';
   import AudioPlayer from '$lib/player/AudioPlayer.svelte';
@@ -20,9 +20,13 @@
     if (!session.loggedIn) return toLogin();
     try {
       await E.verifyKey(session.apiKey);
-    } catch {
-      session.clear();
-      return toLogin();
+    } catch (e) {
+      // Keep the session through network errors; only a rejected key signs out.
+      if (keyRejected(e)) {
+        session.clear();
+        return toLogin();
+      }
+      console.warn('Could not verify the stored key', e);
     }
     ready = true;
     loadUserSettings();

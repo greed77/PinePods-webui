@@ -95,3 +95,19 @@ test('settings: ?section= scrolls to feed problems', async ({ page }) => {
   await page.goto('/settings?section=feed_problems');
   await expect(page.locator('#settings-feed_problems')).toBeInViewport();
 });
+
+// Regression: any failed key check (a server hiccup, or a reload aborting the request)
+// used to clear the stored session and sign the user out.
+test('a server error while checking the key on reload keeps the user signed in', async ({ page, api }) => {
+  api.state.verifyStatus = 503;
+  await page.goto('/settings');
+  await expect(page.locator('.screen-title')).toHaveText('Settings');
+  expect(await page.evaluate(() => localStorage.getItem('userAuthState'))).not.toBeNull();
+});
+
+test('a rejected key on reload signs the user out', async ({ page, api }) => {
+  api.state.verifyStatus = 401;
+  await page.goto('/settings');
+  await expect(page.locator('#username')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('userAuthState'))).toBeNull();
+});

@@ -7,7 +7,7 @@
   import * as E from '$lib/api/endpoints';
   import { session } from '$lib/stores/session.svelte';
   import { toast } from '$lib/stores/app.svelte';
-  import { completeLogin, loadUserSettings, loginWithMfa, loginWithPassword, startOidc, startPage } from '$lib/auth';
+  import { completeLogin, keyRejected, loadUserSettings, loginWithMfa, loginWithPassword, startOidc, startPage } from '$lib/auth';
   import { currentLanguage, setLanguage, t } from '$lib/i18n/index.svelte';
 
   type State = 'default' | 'mfa' | 'timezone';
@@ -47,8 +47,8 @@
         await E.verifyKey(session.apiKey);
         await loadUserSettings();
         return goto(await startPage(), { replaceState: true });
-      } catch {
-        session.clear();
+      } catch (e) {
+        if (keyRejected(e)) session.clear();
       }
     }
     loading = false;
