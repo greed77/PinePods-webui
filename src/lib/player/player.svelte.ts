@@ -421,7 +421,7 @@ class Player {
 /** Whether detected ad ranges apply to the copy playing (upstream `AdAudio::fits`):
  *  the user's server download when it is the analyzed copy, otherwise a copy whose
  *  length matches the analyzed one (inserted ads usually change the length). */
-function adFits(ad: { download?: string; analyzed?: { duration?: number | null } | null }, duration: number, fromServer: boolean) {
+export function adFits(ad: { download?: string; analyzed?: { duration?: number | null } | null }, duration: number, fromServer: boolean) {
   if (ad.download === 'match' && fromServer) return true;
   const expected = ad.analyzed?.duration;
   if (typeof expected !== 'number' || expected <= 0) return true;

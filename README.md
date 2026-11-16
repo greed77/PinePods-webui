@@ -18,6 +18,21 @@ During development Vite proxies `/api` and `/ws` to `PINEPODS_DEV_SERVER`, so th
 | `npm run build` | Static build into `build/` |
 | `npm run check` | Type-check with svelte-check |
 | `npm run gen:api` | Regenerate `src/lib/api/schema.d.ts` from the server's `/api/openapi.json` |
+| `npm test` | Unit tests, then end-to-end tests |
+| `npm run test:unit` / `test:unit:watch` | Unit tests only (Vitest), once or watching |
+| `npm run test:e2e` | End-to-end tests only (Playwright) |
+
+## Testing
+
+Three layers, none of which need a PinePods server:
+
+- **Type check** (`npm run check`): the API client is typed from the server's OpenAPI spec. After `npm run gen:api` against a new server version, any call whose endpoint or body changed fails here.
+- **Unit tests** (`src/**/*.test.ts`, Vitest + jsdom): formatting, episode normalization, session storage, translations, the queue store, and the player engine with the API mocked. The player tests cover what gets recorded when playback starts, where it starts, and what plays next.
+- **End-to-end tests** (`e2e/`, Playwright): the real app in a real browser. `e2e/mock-api.ts` answers every `/api` call in the page with data shaped like a live 0.9.2 server and records the calls, so tests can assert on them. The tests cover login (password, MFA, first-login preferences, deep links, sign-out), the stage 1 pages, queueing, playback and auto-advance, and playback surviving navigation.
+
+Playwright uses the installed Microsoft Edge by default. On a machine without Edge, run `npx playwright install chromium` and set `PW_CHANNEL=chromium`.
+
+When adding a page or fixing a bug, add a test next to it. For a bug, first confirm the test fails without the fix.
 
 ## Deploying
 
