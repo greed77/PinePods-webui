@@ -237,6 +237,17 @@ export const addPodcast = (p: Podcast) =>
     })
   );
 
+export const downloadAllPodcast = (podcast_id: number, is_youtube = false) =>
+  unwrap(api().POST('/api/data/download_all_podcast', { body: { podcast_id, user_id: uid(), is_youtube } }));
+
+type BulkPath =
+  | '/api/data/bulk_mark_episodes_completed'
+  | '/api/data/bulk_save_episodes'
+  | '/api/data/bulk_queue_episodes'
+  | '/api/data/bulk_download_episodes';
+export const bulkAction = (path: BulkPath, episode_ids: number[], is_youtube?: boolean) =>
+  unwrap<{ message: string; processed_count: number }>(api().POST(path, { body: { episode_ids, user_id: uid(), is_youtube } }));
+
 // ---------- Episode actions ----------
 
 const epBody = (ep: Pick<Episode, 'episodeid' | 'is_youtube'>) => ({
