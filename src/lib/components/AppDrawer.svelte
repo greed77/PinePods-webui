@@ -92,14 +92,16 @@
     </div>
   </div>
 
-  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="drawer-icon flex items-center" onclick={toggle}>
-    <button class="cursor-pointer flex items-center justify-center" aria-label="Menu">
+  <!-- The toggle lives on the menu button only: stopping propagation on links here
+       would hide their clicks from SvelteKit's router and force a full page reload
+       (which kills playback). -->
+  <div class="drawer-icon flex items-center">
+    <button class="cursor-pointer flex items-center justify-center" aria-label="Menu" onclick={toggle}>
       <i class="ph ph-list text-4xl transition-transform duration-300 {open ? 'rotate-90 transform' : ''}"></i>
     </button>
     <div class="w-8 h-8 ml-3 flex items-center">
       {#if showHome}
-        <a href="/home" class="rounded-lg cursor-pointer" onclick={(e) => e.stopPropagation()} aria-label="Home">
+        <a href="/home" class="rounded-lg cursor-pointer" aria-label="Home">
           <div class="flex flex-col items-center"><i class="ph ph-house md:text-4xl text-4xl"></i></div>
         </a>
       {/if}
