@@ -67,6 +67,22 @@ export const EPISODES = [
   episode(201, 87, 'Beta One')
 ];
 
+const person = (id: number, name: string, role: string) => ({
+  id,
+  podpeople_id: id * 10,
+  name,
+  img: null,
+  href: null,
+  role,
+  roles: [role],
+  group: null,
+  scope: role === 'guest' ? 'episodes' : 'podcast',
+  episode_count: 1,
+  sources: ['feed'],
+  verified: true,
+  followed: false
+});
+
 /** A short silent WAV so <audio> can genuinely load and play. */
 function silentWav(seconds = 3, rate = 8000) {
   const n = seconds * rate;
@@ -97,6 +113,10 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
   const playlists: any[] = [];
   let nextId = 100;
   let firstLoginDone = opts.firstLoginDone ?? true;
+  const followed = new Set<number>();
+  const ytSubscribed = new Set<string>();
+  let syncServerEnabled = false;
+  let theme = 'Nordic';
   const wav = silentWav();
 
   const json = (route: Route, body: unknown, status = 200) =>
@@ -166,7 +186,10 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
       case 'update_user_language':
         return json(route, { success: true });
       case 'get_theme/3':
-        return json(route, { theme: 'Nordic' });
+        return json(route, { theme });
+      case 'user/set_theme':
+        theme = body.new_theme;
+        return json(route, { detail: 'ok' });
       case 'get_time_info':
         return json(route, { timezone: 'UTC', hour_pref: 24, date_format: 'ISO' });
       case 'get_user_language':
@@ -308,6 +331,15 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
         return json(route, { data: hits, total: hits.length });
       }
       case 'proxy_search':
+        if (query.index === 'youtube')
+          return json(route, {
+            results: [
+              { channelId: 'UC1', name: 'Tube One', description: 'First channel', url: 'https://www.youtube.com/channel/UC1', thumbnailUrl: '', recentVideos: [] },
+              // The search can return a channel twice; the page shows each once.
+              { channelId: 'UC1', name: 'Tube One', description: 'First channel', url: 'https://www.youtube.com/channel/UC1', thumbnailUrl: '', recentVideos: [] },
+              { channelId: 'UC2', name: 'Tube Two', description: '', url: 'https://www.youtube.com/channel/UC2', thumbnailUrl: '', recentVideos: [] }
+            ]
+          });
         return json(route, {
           feeds: [
             { id: 555, title: 'Gamma Radio', url: 'https://example.com/gamma.xml', author: 'G', description: 'Gamma desc', image: '', link: '', categories: { '1': 'Arts' }, explicit: false, episodeCount: 2 }
@@ -330,6 +362,109 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
         return json(route, { feeds: [] });
       case 'add_podcast':
         return json(route, { success: true, podcast_id: 99, first_episode_id: 0 });
+
+      // --- stage 3: people ---
+      case 'people/podcast/86':
+        return json(route, { people: [person(7, 'Roman Mars', 'host')], guests: [person(8, 'Guest Star', 'guest')] });
+      case 'people/7':
+        return json(route, {
+          person: { id: 7, podpeople_id: 70, name: 'Roman Mars', img: null, href: 'https://example.com/roman', followed: followed.has(7) },
+          podcasts: [
+            { podcastid: 86, podcastname: 'Alpha Show', artworkurl: '', feedurl: 'https://example.com/86.xml', podcastindexid: 860, roles: ['host'], podcast_level: true, episode_count: 3 },
+            { podcastid: null, podcastname: 'Outside Show', artworkurl: '', feedurl: 'https://example.com/out.xml', podcastindexid: 999, roles: ['guest'], podcast_level: false, episode_count: 1 }
+          ],
+          episodes: EPISODES.filter((e) => e.podcastid === 86).map(withFlags),
+          external_episodes: [
+            {
+              episodeid: 9001,
+              podcastid: 500,
+              podcastname: 'Outside Show',
+              feedurl: 'https://example.com/out.xml',
+              episodetitle: 'Guest Spot',
+              episodepubdate: '2026-11-01T08:00:00',
+              episodedescription: '',
+              episodeartwork: '',
+              episodeurl: 'https://media.test/9001.wav',
+              episodeduration: 3,
+              completed: false,
+              saved: false,
+              queued: false,
+              downloaded: false,
+              is_youtube: false,
+              is_video: false
+            }
+          ],
+          refreshing: false
+        });
+      case 'people/lookup':
+        return query.podpeople_id === '70' ? json(route, { person_id: 7 }) : json(route, { detail: 'Not found' }, 404);
+      case 'people/followed':
+        return json(route, [...followed].map((id) => ({ id, name: id === 7 ? 'Roman Mars' : 'Someone', img: null, followed: true })));
+      case 'people/7/follow':
+        if (req.method() === 'POST') followed.add(7);
+        else followed.delete(7);
+        return json(route, { success: true });
+      case 'podpeople/discover':
+        if (query.kind === 'top-hosts') return json(route, [{ id: 70, name: 'Roman Mars', img: '', podcast_count: 2 }]);
+        if (query.kind === 'stats') return json(route, { total_hosts: 1, total_podcasts: 2 });
+        return json(route, []);
+
+      // --- stage 3: YouTube ---
+      case 'check_youtube_channel':
+        return json(route, { exists: ytSubscribed.has(query.channel_url) });
+      case 'youtube/subscribe':
+        ytSubscribed.add('https://www.youtube.com/channel/' + query.channel_id);
+        return json(route, { success: true, podcast_id: 300, message: 'ok' });
+      case 'remove_youtube_channel':
+        ytSubscribed.delete(body.channel_url);
+        return json(route, { success: true });
+
+      // --- stage 3: settings ---
+      case 'user_admin_check/3':
+        return json(route, { is_admin: false });
+      case 'user/custom_themes/3':
+        return json(route, { themes: [] });
+      case 'my_user_info/3':
+        return json(route, { userid: 3, fullname: 'Test Dev', username: 'test_dev', email: 'test@test.com', isadmin: 0, timezone: 'UTC', timeformat: 24, dateformat: 'ISO', language: 'en' });
+      case 'get_playback_speed':
+        return json(route, { playback_speed: 1.5 });
+      case 'get_auto_complete_seconds/3':
+        return json(route, { auto_complete_seconds: 0 });
+      case 'get_auto_download_delete_days':
+        return json(route, { days: 0 });
+      case 'get_auto_delete_on_complete':
+        return json(route, { enabled: false, customized: false });
+      case 'ai_status':
+        return json(route, { available: false, transcription_ready: false, ad_removal_ready: false });
+      case 'ai_settings':
+        return json(route, { detail: 'Admin only' }, 403);
+      case 'ai_models':
+        return json(route, { models: { whisper: [], llm_local: [] } });
+      case 'check_mfa_enabled/3':
+        return json(route, { mfa_enabled: false });
+      case 'user/get_podcast_cover_preference':
+        return json(route, { use_podcast_covers: false });
+      case 'user/notification_settings':
+        return json(route, req.method() === 'GET' ? { settings: [] } : { detail: 'ok' });
+      case 'feed_problems':
+        return json(route, { feeds: [], imports: [] });
+      case 'rss_feed_status':
+        return json(route, false);
+      case 'get_unmatched_podcasts':
+      case 'get_ignored_podcasts':
+        return json(route, { podcasts: [] });
+      case 'get_api_info/3':
+        return json(route, { api_info: [{ apikeyid: 1, userid: 3, username: 'test_dev', lastfourdigits: KEY.slice(-4), created: '2026-11-01' }] });
+      case 'get_user_shared_links/3':
+        return json(route, { shared_links: [] });
+      case '/api/sync/server':
+        if (req.method() === 'PUT') syncServerEnabled = !!body.enabled;
+        return json(route, { enabled: syncServerEnabled, username: 'test_dev', server_url: 'https://pods.example', server_url_configured: true, notice: null });
+      case '/api/sync/target':
+        return json(route, { target: null });
+      case '/api/sync/server/app-passwords':
+      case '/api/sync/devices':
+        return json(route, []);
       default:
         // Bookkeeping endpoints (history, listen time, play count...) just succeed.
         return json(route, { detail: 'ok' });

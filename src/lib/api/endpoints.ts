@@ -668,3 +668,477 @@ export async function fetchFeedEpisodes(feedUrl: string, podcastName: string): P
 
 export const removePodcastByName = (podcast_name: string, podcast_url: string) =>
   unwrap(api().POST('/api/data/remove_podcast', { body: { user_id: uid(), podcast_name, podcast_url } }));
+
+// ---------- People (upstream requests/people_req.rs) ----------
+
+/** A person credited on a podcast or episode. */
+export interface CreditedPerson {
+  id: number;
+  podpeople_id?: number | null;
+  name: string;
+  img?: string | null;
+  href?: string | null;
+  role: string;
+  roles: string[];
+  group?: string | null;
+  scope: string;
+  episode_count: number;
+  sources: string[];
+  verified: boolean;
+  followed: boolean;
+}
+
+export interface PersonInfo {
+  id: number;
+  podpeople_id?: number | null;
+  name: string;
+  img?: string | null;
+  href?: string | null;
+  followed: boolean;
+}
+
+export interface PersonPodcast {
+  podcastid?: number | null;
+  podcastname: string;
+  artworkurl?: string | null;
+  feedurl: string;
+  podcastindexid?: number | null;
+  roles: string[];
+  podcast_level: boolean;
+  episode_count: number;
+}
+
+export interface PersonProfile {
+  person: PersonInfo;
+  podcasts: PersonPodcast[];
+  episodes: Episode[];
+  /** Episodes from shows outside the library; played by URL like feed previews. */
+  external_episodes: Episode[];
+  refreshing: boolean;
+}
+
+export async function getPersonProfile(person_id: number, limit: number, offset: number): Promise<PersonProfile> {
+  const d = await unwrap<any>(api().GET('/api/data/people/{person_id}', { params: { path: { person_id }, query: { limit, offset } } }));
+  return {
+    person: d.person,
+    podcasts: d.podcasts ?? [],
+    episodes: (d.episodes ?? []).map(normEpisode),
+    // Upstream's into_episode keeps only display fields, so these play as previews.
+    external_episodes: (d.external_episodes ?? []).map((e: any) =>
+      normEpisode({
+        episodeid: 0,
+        podcastid: 0,
+        podcastname: e.podcastname,
+        feedurl: e.feedurl,
+        episodetitle: e.episodetitle,
+        episodepubdate: e.episodepubdate,
+        episodedescription: e.episodedescription,
+        episodeartwork: e.episodeartwork,
+        artworkurl: e.episodeartwork,
+        episodeurl: e.episodeurl,
+        episodeduration: e.episodeduration
+      })
+    ),
+    refreshing: !!d.refreshing
+  };
+}
+
+/** Resolve a PodPeopleDB id or a name to a PinePods person id. */
+export async function lookupPerson(q: { podpeople_id?: number; name?: string }): Promise<number> {
+  const d = await unwrap<{ person_id: number }>(api().GET('/api/data/people/lookup', { params: { query: q } }));
+  return d.person_id;
+}
+
+export const getFollowedPeople = () => unwrap<PersonInfo[]>(api().GET('/api/data/people/followed'));
+
+export const setFollowing = (person_id: number, follow: boolean) =>
+  follow
+    ? unwrap(api().POST('/api/data/people/{person_id}/follow', { params: { path: { person_id } } }))
+    : unwrap(api().DELETE('/api/data/people/{person_id}/follow', { params: { path: { person_id } } }));
+
+export async function getPodcastPeople(podcast_id: number) {
+  const d = await unwrap<any>(api().GET('/api/data/people/podcast/{podcast_id}', { params: { path: { podcast_id } } }));
+  // Arrays even if the server answers with something else, so the header never breaks.
+  return {
+    people: (Array.isArray(d?.people) ? d.people : []) as CreditedPerson[],
+    guests: (Array.isArray(d?.guests) ? d.guests : []) as CreditedPerson[]
+  };
+}
+
+// PodPeopleDB discovery, proxied by the server. Responses aren't in the spec;
+// shapes from upstream DiscoverHost / DiscoverPodcast / DiscoverStats.
+export interface DiscoverHost {
+  id: number;
+  name: string;
+  img: string;
+  podcast_count: number;
+}
+export interface DiscoverPodcast {
+  podcast_id: number;
+  title: string;
+  host_count: number;
+  description: string;
+}
+export interface DiscoverStats {
+  total_hosts: number;
+  total_podcasts: number;
+}
+const discover = (kind: string, limit?: number) =>
+  unwrap<any>(api().GET('/api/data/podpeople/discover', { params: { query: { kind, limit } } }));
+const normHost = (h: any): DiscoverHost => ({
+  id: h.id ?? 0,
+  name: h.name ?? '',
+  img: h.img ?? '',
+  podcast_count: h.podcast_count ?? h.podcastCount ?? 0
+});
+export const discoverTopHosts = async (limit = 24) => ((await discover('top-hosts', limit)) ?? []).map(normHost);
+export const discoverRecentHosts = async (limit = 12) => ((await discover('recent-hosts', limit)) ?? []).map(normHost);
+export const discoverPopularPodcasts = async (limit = 12): Promise<DiscoverPodcast[]> =>
+  ((await discover('popular-podcasts', limit)) ?? []).map((p: any) => ({
+    podcast_id: p.podcast_id ?? 0,
+    title: p.title ?? '',
+    host_count: p.host_count ?? 0,
+    description: p.description ?? ''
+  }));
+export const discoverStats = async (): Promise<DiscoverStats> => {
+  const s = await discover('stats');
+  return { total_hosts: s?.total_hosts ?? 0, total_podcasts: s?.total_podcasts ?? 0 };
+};
+
+// ---------- YouTube (upstream search_pods.rs / pod_req.rs) ----------
+
+export interface YouTubeChannel {
+  channelId: string;
+  name: string;
+  description: string;
+  subscriberCount?: number | null;
+  url: string;
+  videoCount?: number | null;
+  thumbnailUrl: string;
+}
+
+/** Channel search through the server's search proxy. */
+export async function searchYouTube(query: string): Promise<YouTubeChannel[]> {
+  const d = await unwrap<{ results?: YouTubeChannel[] }>(api().GET('/api/data/proxy_search', { params: { query: { query, index: 'youtube' } } }));
+  // The same channel can come back more than once.
+  const seen = new Set<string>();
+  return (d.results ?? []).filter((c) => c.channelId && !seen.has(c.channelId) && !!seen.add(c.channelId));
+}
+
+export const youtubeChannelUrl = (channelId: string) => `https://www.youtube.com/channel/${channelId}`;
+
+export const checkYouTubeChannel = async (channel_name: string, channel_url: string) =>
+  !!(
+    await unwrap<{ exists: boolean }>(
+      api().GET('/api/data/check_youtube_channel', { params: { query: { user_id: uid(), channel_name, channel_url } } })
+    )
+  ).exists;
+
+export const subscribeYouTubeChannel = (channel_id: string) =>
+  unwrap<any>(api().POST('/api/data/youtube/subscribe', { params: { query: { channel_id, user_id: uid() } } }));
+
+export const removeYouTubeChannel = (channel_name: string, channel_url: string) =>
+  unwrap(api().POST('/api/data/remove_youtube_channel', { body: { user_id: uid(), channel_name, channel_url } }));
+
+// ---------- Settings: theme ----------
+
+export const setTheme = (new_theme: string) => unwrap(api().PUT('/api/data/user/set_theme', { body: { user_id: uid(), new_theme } }));
+export const getCustomThemes = async () =>
+  (await unwrap<{ themes: import('$lib/theme/custom').CustomTheme[] }>(api().GET('/api/data/user/custom_themes/{user_id}', { params: { path: { user_id: uid() } } })))
+    .themes ?? [];
+export const createCustomTheme = async (name: string, colors: import('$lib/theme/custom').ThemeColors) =>
+  (await unwrap<{ theme: import('$lib/theme/custom').CustomTheme }>(api().POST('/api/data/user/custom_themes', { body: { user_id: uid(), name, ...colors } })))
+    .theme;
+export const deleteCustomTheme = (theme_id: number) =>
+  unwrap(api().DELETE('/api/data/user/custom_themes', { body: { user_id: uid(), theme_id } }));
+
+// ---------- Settings: account ----------
+
+export interface MyUserInfo {
+  userid: number;
+  fullname: string;
+  username: string;
+  email: string;
+  isadmin: number;
+  timezone: string;
+  timeformat: number;
+  dateformat: string;
+  language: string;
+}
+export const getMyUserInfo = () => unwrap<MyUserInfo>(api().GET('/api/data/my_user_info/{user_id}', { params: { path: { user_id: uid() } } }));
+export const setUsername = (new_username: string) => unwrap(api().PUT('/api/data/user/set_username', { body: { user_id: uid(), new_username } }));
+export const setEmail = (new_email: string) => unwrap(api().PUT('/api/data/user/set_email', { body: { user_id: uid(), new_email } }));
+// The server reads new_name from the query string (not in the spec).
+export const setFullname = (new_name: string) =>
+  unwrap(api().PUT('/api/data/set_fullname/{user_id}', { params: { path: { user_id: uid() }, query: { new_name } as never } }));
+/** `hash_pw` is an Argon2id PHC string (see util/password.ts). */
+export const setPassword = (hash_pw: string) => unwrap(api().PUT('/api/data/set_password/{user_id}', { params: { path: { user_id: uid() } }, body: { hash_pw } }));
+export const updateTimezone = (timezone: string) => unwrap(api().PUT('/api/data/update_timezone', { body: { user_id: uid(), timezone } }));
+export const updateDateFormat = (date_format: string) => unwrap(api().PUT('/api/data/update_date_format', { body: { user_id: uid(), date_format } }));
+export const updateTimeFormat = (hour_pref: number) => unwrap(api().PUT('/api/data/update_time_format', { body: { user_id: uid(), hour_pref } }));
+
+// ---------- Settings: playback / auto-delete ----------
+
+export const getUserPlaybackSpeed = async () =>
+  Number((await unwrap<any>(api().POST('/api/data/get_playback_speed', { body: { user_id: uid(), podcast_id: null } }))).playback_speed ?? 1);
+export const setUserPlaybackSpeed = (playback_speed: number) =>
+  unwrap(api().POST('/api/data/user/set_playback_speed', { body: { user_id: uid(), playback_speed } }));
+export const getAutoCompleteSeconds = async () =>
+  Number((await unwrap<any>(api().GET('/api/data/get_auto_complete_seconds/{user_id}', { params: { path: { user_id: uid() } } }))).auto_complete_seconds ?? 0);
+export const updateAutoCompleteSeconds = (seconds: number) =>
+  unwrap(api().PUT('/api/data/update_auto_complete_seconds', { body: { user_id: uid(), seconds } }));
+export const setDefaultVolume = (volume: number) => unwrap(api().POST('/api/data/user/set_default_volume', { body: { user_id: uid(), volume } }));
+export const getUserAutoDeleteDays = async () =>
+  Number((await unwrap<any>(api().POST('/api/data/get_auto_download_delete_days', { body: { user_id: uid(), podcast_id: null } }))).days ?? 0);
+export const setUserAutoDeleteDays = (days: number) =>
+  unwrap(api().POST('/api/data/user/set_auto_download_delete_days', { body: { user_id: uid(), days } }));
+export const getUserAutoDeleteOnComplete = async () =>
+  !!(await unwrap<any>(api().POST('/api/data/get_auto_delete_on_complete', { body: { user_id: uid(), podcast_id: null } }))).enabled;
+export const setUserAutoDeleteOnComplete = (enabled: boolean) =>
+  unwrap(api().POST('/api/data/user/set_auto_delete_on_complete', { body: { user_id: uid(), enabled } }));
+
+export const isUserAdmin = async () =>
+  !!(await unwrap<{ is_admin: boolean }>(api().GET('/api/data/user_admin_check/{user_id}', { params: { path: { user_id: uid() } } }))).is_admin;
+
+// ---------- Settings: AI (optional pinepods-ai sidecar) ----------
+
+export interface AiStatus {
+  available: boolean;
+  transcription_ready: boolean;
+  ad_removal_ready: boolean;
+}
+export interface AiSettings {
+  transcription_model: string;
+  llm_backend: string;
+  llm_model?: string | null;
+  llm_url?: string | null;
+  has_api_key?: boolean;
+}
+export interface AiModels {
+  whisper: string[];
+  llm_local: string[];
+}
+export const getAiStatus = async (): Promise<AiStatus> => {
+  const d = await unwrap<any>(api().GET('/api/data/ai_status'));
+  return { available: !!d?.available, transcription_ready: !!d?.transcription_ready, ad_removal_ready: !!d?.ad_removal_ready };
+};
+/** Admin-only; fails for other users. */
+export const getAiSettings = async () => (await unwrap<{ settings: AiSettings }>(api().GET('/api/data/ai_settings'))).settings;
+export const getAiModels = async (): Promise<AiModels> => {
+  const m = (await unwrap<{ models: Partial<AiModels> }>(api().GET('/api/data/ai_models', { params: { query: {} } }))).models ?? {};
+  return { whisper: m.whisper ?? [], llm_local: m.llm_local ?? [] };
+};
+export const updateAiSettings = (body: {
+  transcription_model: string;
+  llm_backend: string;
+  llm_model: string | null;
+  llm_url: string | null;
+  llm_api_key: string | null;
+  clear_api_key: boolean;
+}) => unwrap(api().POST('/api/data/ai_settings', { body: { ...body, whisper_device: null, whisper_compute_type: null } }));
+export const pullAiModel = (body: { kind: string; model: string; repo: string | null; filename: string | null; url: string | null }) =>
+  unwrap(api().POST('/api/data/ai_pull_model', { body }));
+
+// ---------- Settings: MFA ----------
+
+export const generateMfaSecret = () =>
+  unwrap<{ secret: string; qr_code_svg: string }>(api().GET('/api/data/generate_mfa_secret/{user_id}', { params: { path: { user_id: uid() } } }));
+export const verifyTempMfa = async (mfa_code: string) =>
+  !!(await unwrap<{ verified: boolean }>(api().POST('/api/data/verify_temp_mfa', { body: { user_id: uid(), mfa_code } }))).verified;
+// Body isn't in the spec; upstream sends { user_id }.
+export const disableMfa = () => unwrap(api().DELETE('/api/data/delete_mfa', { body: { user_id: uid() } as never }));
+
+// ---------- Settings: import / export ----------
+
+/** The user's subscriptions as OPML text. */
+export async function exportOpml(): Promise<string> {
+  const { data, response } = await api().POST('/api/data/backup_user', { body: { user_id: uid() }, parseAs: 'text' });
+  if (!response.ok) throw new Error(response.statusText || `HTTP ${response.status}`);
+  return data as unknown as string;
+}
+export const importOpml = (podcasts: string[]) => unwrap(api().POST('/api/data/import_opml', { body: { podcasts, user_id: uid() } }));
+export const getImportProgress = () =>
+  unwrap<{ current: number; total: number; current_podcast: string }>(api().GET('/api/data/import_progress/{user_id}', { params: { path: { user_id: uid() } } }));
+
+/** Saves text as a file download. */
+export function downloadText(text: string, filename: string, type: string) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ---------- Settings: display ----------
+
+export const setStartPage = (startpage: string) =>
+  unwrap(api().POST('/api/data/startpage', { params: { query: { user_id: uid(), startpage } } }));
+export const getPodcastCoverPreference = async () =>
+  !!(await unwrap<{ use_podcast_covers: boolean }>(
+    api().GET('/api/data/user/get_podcast_cover_preference', { params: { query: { user_id: uid() } as never } })
+  )).use_podcast_covers;
+export const setGlobalPodcastCoverPreference = (use_podcast_covers: boolean) =>
+  unwrap(api().POST('/api/data/user/set_global_podcast_cover_preference', { body: { user_id: uid(), use_podcast_covers, podcast_id: null } }));
+export const setUseGravatar = (enabled: boolean) => unwrap(api().POST('/api/data/user/set_use_gravatar', { body: { user_id: uid(), enabled } }));
+
+// ---------- Settings: notifications ----------
+
+export interface NotificationSetting {
+  platform: string;
+  enabled: boolean;
+  ntfy_topic?: string | null;
+  ntfy_server_url?: string | null;
+  ntfy_username?: string | null;
+  ntfy_password?: string | null;
+  ntfy_access_token?: string | null;
+  gotify_url?: string | null;
+  gotify_token?: string | null;
+  http_url?: string | null;
+  http_token?: string | null;
+  http_method?: string | null;
+}
+export const getNotificationSettings = async () =>
+  (await unwrap<{ settings: NotificationSetting[] }>(api().GET('/api/data/user/notification_settings', { params: { query: { user_id: uid() } } }))).settings ?? [];
+export const updateNotificationSettings = (s: NotificationSetting) =>
+  unwrap(api().PUT('/api/data/user/notification_settings', { body: { user_id: uid(), ...s } }));
+export const testNotification = (platform: string) => unwrap(api().POST('/api/data/user/test_notification', { body: { user_id: uid(), platform } }));
+
+// ---------- Settings: custom feeds ----------
+
+export const addCustomFeed = (feed_url: string, opts: { username?: string; password?: string; youtube_channel?: boolean; feed_cutoff?: number } = {}) =>
+  unwrap(
+    api().POST('/api/data/add_custom_podcast', {
+      body: {
+        feed_url,
+        user_id: uid(),
+        username: opts.username ?? null,
+        password: opts.password ?? null,
+        youtube_channel: opts.youtube_channel ?? false,
+        feed_cutoff: opts.feed_cutoff ?? 30
+      }
+    })
+  );
+
+// ---------- Settings: local podcasts ----------
+
+export interface LocalDirEntry {
+  name: string;
+  path: string;
+  audio_count: number;
+}
+export const listLocalDirectories = (path: string) =>
+  unwrap<{ current_path: string; directories: LocalDirEntry[] }>(api().GET('/api/data/list_local_directories', { params: { query: { path } } }));
+/** Server-relative URL of a cover image found in the folder, if any. */
+export const detectLocalCover = async (path: string) =>
+  (await unwrap<{ artwork_url?: string | null }>(api().GET('/api/data/detect_local_cover', { params: { query: { path } } }))).artwork_url ?? null;
+export const addLocalPodcast = async (b: { directory_path: string; podcast_name: string; description: string | null; author: string | null; explicit: boolean }) =>
+  (await unwrap<{ data: { podcastid: number } }>(api().POST('/api/data/add_local_podcast', { body: { user_id: uid(), ...b } }))).data;
+/** Multipart upload, which the typed client doesn't describe. */
+export async function addLocalPodcastArtwork(podcast_id: number, file: File) {
+  const form = new FormData();
+  form.append('podcast_id', String(podcast_id));
+  form.append('user_id', String(uid()));
+  form.append('artwork', file, file.name);
+  const r = await fetch(`${session.serverName}/api/data/add_local_podcast_artwork`, { method: 'POST', headers: { 'Api-Key': session.apiKey }, body: form });
+  if (!r.ok) throw new Error((await r.text().catch(() => '')) || r.statusText);
+}
+
+// ---------- Settings: podcast sync (/api/sync) ----------
+
+import type { components } from './schema';
+type S = components['schemas'];
+export type SyncServerInfo = S['SyncServerInfo'];
+export type SyncTargetInfo = S['SyncTargetInfo'];
+export type SyncDevice = S['SyncDeviceEntry'];
+export type AppPassword = S['AppPasswordEntry'];
+export type SyncStats = S['SyncStats'];
+export type SyncTestResult = S['TestTargetResponse'];
+export type SyncCredentials = S['TargetCredentials'];
+
+export const getSyncServer = () => unwrap<SyncServerInfo>(api().GET('/api/sync/server'));
+export const setSyncServer = (enabled: boolean) => unwrap<SyncServerInfo>(api().PUT('/api/sync/server', { body: { enabled } }));
+export const dismissSyncNotice = () => unwrap(api().DELETE('/api/sync/notice'));
+export const listAppPasswords = () => unwrap<AppPassword[]>(api().GET('/api/sync/server/app-passwords'));
+export const createAppPassword = (label: string) =>
+  unwrap<S['CreatedAppPassword']>(api().POST('/api/sync/server/app-passwords', { body: { label: label || null } }));
+export const revokeAppPassword = (app_password_id: number) =>
+  unwrap(api().DELETE('/api/sync/server/app-passwords/{app_password_id}', { params: { path: { app_password_id } } }));
+export const listSyncDevices = () => unwrap<SyncDevice[]>(api().GET('/api/sync/devices'));
+export const renameSyncDevice = (device_id: number, caption: string) =>
+  unwrap(api().PUT('/api/sync/devices/{device_id}', { params: { path: { device_id } }, body: { caption } }));
+export const removeSyncDevice = (device_id: number) => unwrap(api().DELETE('/api/sync/devices/{device_id}', { params: { path: { device_id } } }));
+export const getSyncTarget = async () => (await unwrap<{ target?: SyncTargetInfo | null }>(api().GET('/api/sync/target'))).target ?? null;
+export const testSyncTarget = (c: SyncCredentials) => unwrap<SyncTestResult>(api().POST('/api/sync/target/test', { body: c }));
+export const saveSyncTarget = (c: SyncCredentials) => unwrap(api().PUT('/api/sync/target', { body: c }));
+export const deleteSyncTarget = () => unwrap(api().DELETE('/api/sync/target'));
+export const runSync = (full: boolean) => unwrap<S['RunResponse']>(api().POST('/api/sync/run', { params: { query: { full } } }));
+export const getSyncStats = () => unwrap<SyncStats>(api().GET('/api/sync/stats'));
+/** Starts Nextcloud's login flow: open `login`, then hand the poll token to the server. */
+export const initiateNextcloudLogin = (nextcloud_url: string) =>
+  unwrap<{ login: string; poll: { token: string; endpoint: string } }>(api().POST('/api/data/initiate_nextcloud_login', { body: { user_id: uid(), nextcloud_url } }));
+export const addNextcloudServer = (b: { token: string; poll_endpoint: string; nextcloud_url: string }) =>
+  unwrap(api().POST('/api/data/add_nextcloud_server', { body: { user_id: uid(), ...b } }));
+
+// ---------- Settings: feed problems ----------
+
+export type FeedProblems = S['FeedProblems'];
+export type FailingFeed = S['FailingFeed'];
+export type ImportFailure = S['ImportFailure'];
+export const getFeedProblems = () => unwrap<FeedProblems>(api().GET('/api/data/feed_problems'));
+export const refreshFailingFeed = (podcast_id: number) =>
+  unwrap<FeedProblems>(api().POST('/api/data/feed_problems/{podcast_id}/refresh', { params: { path: { podcast_id } } }));
+export const retryImport = (id: number) => unwrap(api().POST('/api/data/feed_problems/imports/{id}/retry', { params: { path: { id } } }));
+export const removeImport = (id: number) => unwrap(api().POST('/api/data/feed_problems/imports/{id}/remove', { params: { path: { id } } }));
+export const dismissImport = (id: number) => unwrap(api().DELETE('/api/data/feed_problems/imports/{id}', { params: { path: { id } } }));
+
+// ---------- Settings: RSS feeds ----------
+
+export const getRssFeedStatus = async () => !!(await unwrap<boolean>(api().GET('/api/data/rss_feed_status')));
+export const toggleRssFeeds = async () => !!(await unwrap<{ enabled: boolean }>(api().POST('/api/data/toggle_rss_feeds'))).enabled;
+export const getRssKey = async () =>
+  (await unwrap<{ rss_key: string }>(api().GET('/api/data/get_rss_key', { params: { query: { user_id: uid() } } }))).rss_key ?? '';
+
+// ---------- Settings: Podcast Index matching ----------
+
+export interface UnmatchedPodcast {
+  podcast_id: number;
+  podcast_name: string;
+  artwork_url?: string | null;
+  author?: string | null;
+}
+export const getUnmatchedPodcasts = async () =>
+  (await unwrap<{ podcasts: UnmatchedPodcast[] }>(api().POST('/api/data/get_unmatched_podcasts', { body: { user_id: uid() } }))).podcasts ?? [];
+export const getIgnoredPodcasts = async () =>
+  (await unwrap<{ podcasts: UnmatchedPodcast[] }>(api().POST('/api/data/get_ignored_podcasts', { body: { user_id: uid() } }))).podcasts ?? [];
+export const ignorePodcastIndexId = (podcast_id: number, ignore: boolean) =>
+  unwrap(api().POST('/api/data/ignore_podcast_index_id', { body: { user_id: uid(), podcast_id, ignore } }));
+export const updatePodcastIndexId = (podcast_id: number, podcast_index_id: number) =>
+  unwrap(api().POST('/api/data/update_podcast_index_id', { body: { user_id: uid(), podcast_id, podcast_index_id } }));
+
+// ---------- Settings: API keys / shared links ----------
+
+export interface ApiKeyInfo {
+  apikeyid: number;
+  userid: number;
+  username: string;
+  lastfourdigits: string;
+  created: string;
+}
+export const getApiInfo = async () =>
+  (await unwrap<{ api_info: ApiKeyInfo[] }>(api().GET('/api/data/get_api_info/{user_id}', { params: { path: { user_id: uid() } } }))).api_info ?? [];
+export const createApiKey = async () =>
+  (await unwrap<{ api_key: string }>(api().POST('/api/data/create_api_key', { body: { user_id: uid(), rssonly: false } }))).api_key;
+export const deleteApiKey = (api_id: number) => unwrap(api().DELETE('/api/data/delete_api_key', { body: { api_id: String(api_id) } }));
+
+export interface SharedLink {
+  share_code: string;
+  expiration_date: string;
+  episode_title: string;
+  podcast_name: string;
+}
+export const getSharedLinks = async () =>
+  (await unwrap<{ shared_links: SharedLink[] }>(api().GET('/api/data/get_user_shared_links/{user_id}', { params: { path: { user_id: uid() } } })))
+    .shared_links ?? [];
+export const deleteSharedLink = (share_code: string) => unwrap(api().DELETE('/api/data/delete_shared_link', { body: { share_code } }));
+export const extendSharedLink = (share_code: string, days: number) => unwrap(api().PUT('/api/data/extend_shared_link', { body: { share_code, days } }));

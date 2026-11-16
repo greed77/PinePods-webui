@@ -78,6 +78,13 @@ class Session {
     write('serverState', 'server_details', this.server);
   }
 
+  /** Changes stored user details (username, avatar setting) and persists them. */
+  updateUser(patch: Partial<UserDetails>) {
+    if (!this.user) return;
+    this.user = { ...this.user, ...patch };
+    write('userState', 'user_details', this.user);
+  }
+
   clear() {
     this.user = this.auth = this.server = null;
     for (const k of ['userState', 'userAuthState', 'serverState']) {

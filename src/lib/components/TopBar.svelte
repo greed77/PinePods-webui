@@ -44,7 +44,7 @@
     expanded = false;
     const q = value.trim();
     if (!q) return;
-    if (index === 'youtube') return toast.info('YouTube search comes with the YouTube pages in stage 3.');
+    if (index === 'youtube') return goto(`/youtube_layout?q=${encodeURIComponent(q)}`);
     goto(`/search_results?q=${encodeURIComponent(q)}&index=${index}`);
   }
 

@@ -3,6 +3,7 @@ import * as E from '$lib/api/endpoints';
 import { session } from '$lib/stores/session.svelte';
 import { prefs, ui } from '$lib/stores/app.svelte';
 import { changeTheme } from '$lib/theme/themes.js';
+import { applyThemeByName, isBuiltinTheme } from '$lib/theme/custom';
 import { setLanguage } from '$lib/i18n/index.svelte';
 import { md5 } from 'hash-wasm';
 
@@ -51,8 +52,10 @@ export async function completeLogin(apiKey: string, username: string) {
 /** Theme, time settings, language and avatar for a signed-in user. */
 export async function loadUserSettings() {
   const tasks: Promise<unknown>[] = [
-    E.getTheme().then(({ theme }) => {
-      changeTheme(theme);
+    E.getTheme().then(async ({ theme }) => {
+      // A custom theme's colors live on the server (upstream only applies them when picked).
+      if (isBuiltinTheme(theme)) changeTheme(theme);
+      else applyThemeByName(theme, await E.getCustomThemes().catch(() => []));
       try {
         localStorage.setItem('selected_theme', theme);
       } catch {

@@ -6,6 +6,8 @@
   import { sanitize } from '$lib/util/format';
   import { t } from '$lib/i18n/index.svelte';
   import FallbackImage from './FallbackImage.svelte';
+  import PeopleStrip from './PeopleStrip.svelte';
+  import type { CreditedPerson } from '$lib/api/endpoints';
 
   interface HeaderPodcast {
     podcastname: string;
@@ -24,8 +26,18 @@
     busy = false,
     isVideo = false,
     ontoggle,
-    ondownload
-  }: { podcast: HeaderPodcast; subscribed: boolean; busy?: boolean; isVideo?: boolean; ontoggle: () => void; ondownload?: () => void } = $props();
+    ondownload,
+    people
+  }: {
+    podcast: HeaderPodcast;
+    subscribed: boolean;
+    busy?: boolean;
+    isVideo?: boolean;
+    ontoggle: () => void;
+    ondownload?: () => void;
+    /** Hosts and guests (subscribed, non-YouTube podcasts). */
+    people?: { people: CreditedPerson[]; guests: CreditedPerson[] } | null;
+  } = $props();
 
   let isMobile = $state(false);
   let descExpanded = $state(false);
@@ -84,6 +96,10 @@
       {/if}
     </div>
     <div class="ep-mobile-desc-section">{@render description('')}</div>
+    {#if people}
+      <PeopleStrip people={people.people} layout="chips" label={t('episodes_layout.hosted_by')} class="ep-mobile-hosts" />
+      <PeopleStrip people={people.guests} layout="chips" label={t('people.guests')} class="ep-mobile-hosts" />
+    {/if}
     {#if categories.length}
       <div class="ep-mobile-categories">
         {#each categories as c}<span class="category-box">{c}</span>{/each}
@@ -130,6 +146,10 @@
         </div>
       </div>
       {@render description('pd-banner-desc')}
+      {#if people}
+        <PeopleStrip people={people.people} layout="banner" label={t('episodes_layout.hosted_by')} class="pd-banner-people" />
+        <PeopleStrip people={people.guests} layout="chips" label={t('people.guests')} class="pd-banner-guests" />
+      {/if}
       {#if categories.length}
         <div class="pd-banner-cats">
           {#each categories as c}<span class="category-box">{c}</span>{/each}

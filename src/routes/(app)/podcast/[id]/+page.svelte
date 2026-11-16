@@ -20,6 +20,7 @@
   const id = $derived(Number(page.params.id));
 
   let details = $state<PodcastDetails | null>(null);
+  let people = $state<{ people: E.CreditedPerson[]; guests: E.CreditedPerson[] } | null>(null);
   let loading = $state(true);
   let episodes = $state<Episode[]>([]);
   let total = $state(0);
@@ -48,8 +49,16 @@
     search = debounced = '';
     selecting = false;
     selected = new Set();
+    people = null;
     E.getPodcastDetails(pid)
-      .then((d) => (details = d))
+      .then((d) => {
+        details = d;
+        // Hosts and guests; YouTube channels have none.
+        if (!d.isyoutubechannel)
+          E.getPodcastPeople(pid)
+            .then((p) => pid === id && (people = p))
+            .catch(() => {});
+      })
       .catch((e) => toast.error(`Error: ${(e as Error).message}`))
       .finally(() => (loading = false));
   });
@@ -225,7 +234,7 @@
   {#if loading}
     <Loading />
   {:else if details}
-    <PodcastHeader podcast={details} {subscribed} {busy} {isVideo} ontoggle={toggleSubscription} ondownload={() => (modal = 'download')} />
+    <PodcastHeader podcast={details} {subscribed} {busy} {isVideo} ontoggle={toggleSubscription} ondownload={() => (modal = 'download')} {people} />
 
     <div class="pfb-section">
       <div class="pfb-bar">

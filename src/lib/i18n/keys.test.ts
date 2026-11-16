@@ -8,6 +8,9 @@ const sources = import.meta.glob(['/src/**/*.svelte', '/src/**/*.ts', '!/src/**/
   string
 >;
 
+/** String literals that look like keys but aren't (file names). */
+const NOT_KEYS = new Set(['podcasts.opml']);
+
 const get = (key: string) => key.split('.').reduce<any>((o, p) => (o && typeof o === 'object' ? o[p] : undefined), en);
 
 describe('translation keys', () => {
@@ -16,7 +19,7 @@ describe('translation keys', () => {
     const pattern = new RegExp(`['\`]((?:${namespaces})\\.[a-z0-9_]+)['\`]`, 'g');
     const missing: string[] = [];
     for (const [file, text] of Object.entries(sources)) {
-      for (const m of text.matchAll(pattern)) if (typeof get(m[1]) !== 'string') missing.push(`${m[1]} (${file})`);
+      for (const m of text.matchAll(pattern)) if (!NOT_KEYS.has(m[1]) && typeof get(m[1]) !== 'string') missing.push(`${m[1]} (${file})`);
     }
     expect(missing).toEqual([]);
   });

@@ -64,3 +64,30 @@ describe('streamUrl', () => {
     expect(streamUrl({ ...base, episodeurl: 'https://www.youtube.com/watch?v=1' })).toMatch(/&type=youtube$/);
   });
 });
+
+describe('people endpoints', () => {
+  // The API client keeps the fetch it was created with, so one stub serves every test.
+  let next: unknown = null;
+  const respond = (body: unknown) => (next = body);
+  globalThis.fetch = (async () => new Response(JSON.stringify(next), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+
+  it('getPodcastPeople always returns arrays (a bad body once crashed the podcast header)', async () => {
+    const { getPodcastPeople } = await import('./endpoints');
+    respond({ detail: 'ok' });
+    expect(await getPodcastPeople(1)).toEqual({ people: [], guests: [] });
+  });
+
+  it('getPersonProfile turns outside-library episodes into previews played by URL', async () => {
+    const { getPersonProfile } = await import('./endpoints');
+    respond({
+      person: { id: 7, name: 'R', followed: false },
+      podcasts: [],
+      episodes: [],
+      external_episodes: [{ episodeid: 9001, podcastid: 5, podcastname: 'Out', feedurl: 'f', episodetitle: 'Guest', episodeurl: 'u', episodeartwork: 'a', episodeduration: 60 }],
+      refreshing: true
+    });
+    const p = await getPersonProfile(7, 50, 0);
+    expect(p.refreshing).toBe(true);
+    expect(p.external_episodes[0]).toMatchObject({ episodeid: 0, podcastid: 0, episodetitle: 'Guest', episodeurl: 'u', artworkurl: 'a' });
+  });
+});
