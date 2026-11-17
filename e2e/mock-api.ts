@@ -117,7 +117,13 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
   const ytSubscribed = new Set<string>();
   let syncServerEnabled = false;
   let theme = 'Nordic';
-  const state = { verifyStatus: 200 };
+  const state = { verifyStatus: 200, admin: false };
+  const users: any[] = [
+    { userid: 1, fullname: 'Background Tasks', username: 'background_tasks', email: 'inactive', isadmin: 0 },
+    { userid: 3, fullname: 'Test Dev', username: 'test_dev', email: 'test@test.com', isadmin: 1 },
+    { userid: 4, fullname: 'Other', username: 'other', email: 'other@test.com', isadmin: 0 }
+  ];
+  const oidc: any[] = [];
   const wav = silentWav();
 
   const json = (route: Route, body: unknown, status = 200) =>
@@ -422,7 +428,45 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
 
       // --- stage 3: settings ---
       case 'user_admin_check/3':
-        return json(route, { is_admin: false });
+        return json(route, { is_admin: state.admin });
+
+      // --- stage 3: admin settings ---
+      case 'get_user_info':
+        return json(route, users);
+      case 'add_user':
+        users.push({ userid: ++nextId, fullname: body.fullname, username: body.username, email: body.email, isadmin: 0 });
+        return json(route, { detail: 'ok', user_id: nextId });
+      case 'user/final_admin/3':
+        return json(route, { final_admin: true });
+      case 'user/final_admin/4':
+        return json(route, { final_admin: false });
+      case 'user/set_isadmin': {
+        const u = users.find((x) => x.userid === body.user_id);
+        if (u) u.isadmin = body.isadmin ? 1 : 0;
+        return json(route, { detail: 'ok' });
+      }
+      case 'list_oidc_providers':
+        return json(route, { providers: oidc });
+      case 'add_oidc_provider':
+        oidc.push({ ...body, provider_id: oidc.length + 1, enabled: true, initialized_from_env: false });
+        return json(route, { detail: 'ok' });
+      case 'update_services':
+        return json(route, {
+          search: { url: 'https://search.example', reachable: true, latency_ms: 42, error: null },
+          podping: { enabled: false, relay_url: 'https://search.example', relay: null, relay_error: null, client: { pings_seen: 0, feeds_refreshed: 0, last_success_at: null, last_error: null } }
+        });
+      case 'download_status':
+        return json(route, true);
+      case 'download_metadata_settings':
+        return json(route, { folder_cover: true, episode_cover: true, metadata_sidecar: false, metadata_format: 'json', metadata_subfolder: false });
+      case 'ytdlp_settings':
+        return json(route, { settings: { auto_update: true, channel: 'stable', last_updated: null, last_result: null }, version: '2026.10.26' });
+      case 'get_email_settings':
+        return json(route, { Emailsettingsid: 1, ServerName: 'default_server', ServerPort: 587, FromEmail: 'x@y.z', SendMode: 'SMTP', Encryption: 'default_encryption', AuthRequired: 1, Username: 'u', Password: '' });
+      case 'get_scheduled_backup':
+        return json(route, { enabled: false, schedule: null, retention_count: null, updated_at: null });
+      case 'list_backup_files':
+        return json(route, { backup_files: [{ filename: 'backup_1.sql', size: 2097152, modified: 1794800000 }] });
       case 'user/custom_themes/3':
         return json(route, { themes: [] });
       case 'my_user_info/3':

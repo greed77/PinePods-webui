@@ -111,3 +111,78 @@ test('a rejected key on reload signs the user out', async ({ page, api }) => {
   await expect(page.locator('#username')).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('userAuthState'))).toBeNull();
 });
+
+// --- Admin tab ---
+
+test('the Admin tab is hidden from non-admins', async ({ page }) => {
+  await page.goto('/settings');
+  await expect(page.locator('.settings-tab', { hasText: 'User Settings' })).toBeVisible();
+  await expect(page.locator('.settings-tab', { hasText: 'Admin Settings' })).toHaveCount(0);
+});
+
+test.describe('as an admin', () => {
+  test.beforeEach(async ({ page, api }) => {
+    api.state.admin = true;
+    await page.goto('/settings');
+    await page.locator('.settings-tab', { hasText: 'Admin Settings' }).click();
+  });
+
+  test('creating a user sends an Argon2id hash and lists them', async ({ page, api }) => {
+    await page.getByRole('button', { name: 'Create New User' }).last().click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Username').fill('newbie');
+    await dialog.getByLabel('Full Name').fill('New Person');
+    await dialog.getByLabel('Email').fill('new@test.com');
+    await dialog.getByLabel('Password').fill('secret123');
+    await dialog.getByRole('button', { name: 'Submit' }).click();
+    await expect(page.locator('td', { hasText: 'newbie' })).toBeVisible();
+    const body = api.called('add_user')[0].body;
+    expect(body).toMatchObject({ username: 'newbie', email: 'new@test.com' });
+    expect(body.hash_pw).toMatch(/^\$argon2id\$/);
+    expect(JSON.stringify(body)).not.toContain('secret123');
+  });
+
+  test('the last admin cannot lose admin rights; others can', async ({ page, api }) => {
+    await page.locator('tr', { hasText: 'test_dev' }).click();
+    await page.getByRole('dialog').locator('label.toggle').click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Submit' }).click();
+    await expect(page.getByText('Unable to remove admin status from final administrator')).toBeVisible();
+    expect(api.called('user/set_isadmin')).toHaveLength(0);
+
+    await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).last().click();
+    await page.locator('tr', { hasText: 'other@test.com' }).click();
+    await page.getByRole('dialog').locator('label.toggle').click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Submit' }).click();
+    await expect(page.locator('tr', { hasText: 'other@test.com' })).toContainText('Yes');
+    expect(api.called('user/set_isadmin')[0].body).toEqual({ user_id: 4, isadmin: true });
+  });
+
+  test('the background_tasks user cannot be edited', async ({ page }) => {
+    await page.locator('tr', { hasText: 'background_tasks' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('adding an OIDC provider sends the default scopes', async ({ page, api }) => {
+    await page.getByRole('button', { name: 'Add Provider' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Provider Name').fill('Authentik');
+    await dialog.getByLabel('Client ID').fill('cid');
+    await dialog.getByLabel(/Client Secret/).fill('csecret');
+    await dialog.getByLabel('Authorization URL').fill('https://auth.example.com/authorize');
+    await dialog.getByLabel('Token URL').fill('https://auth.example.com/token');
+    await dialog.getByLabel('User Info URL').fill('https://auth.example.com/userinfo');
+    await dialog.getByLabel('Button Text', { exact: true }).fill('Login with Authentik');
+    await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+    await expect(page.getByText('Authentik', { exact: true })).toBeVisible();
+    expect(api.called('add_oidc_provider')[0].body).toMatchObject({ provider_name: 'Authentik', scope: 'openid email profile' });
+  });
+
+  test('restoring a server backup asks first', async ({ page, api }) => {
+    await page.getByLabel('Select from server backups').check();
+    await page.getByText('backup_1.sql').last().click();
+    await page.getByRole('button', { name: /Restore from selected/i }).click();
+    await expect(page.getByRole('heading', { name: 'Restore Server' })).toBeVisible();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    expect(api.called('restore_backup_file')).toHaveLength(0);
+  });
+});

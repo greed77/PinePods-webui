@@ -26,6 +26,15 @@
   import PodcastIndexMatching from '$lib/settings/PodcastIndexMatching.svelte';
   import ApiKeys from '$lib/settings/ApiKeys.svelte';
   import SharedLinks from '$lib/settings/SharedLinks.svelte';
+  import UserManagement from '$lib/settings/admin/UserManagement.svelte';
+  import OidcSettings from '$lib/settings/admin/OidcSettings.svelte';
+  import UpdateServices from '$lib/settings/admin/UpdateServices.svelte';
+  import DownloadSettings from '$lib/settings/admin/DownloadSettings.svelte';
+  import YtDlpSettings from '$lib/settings/admin/YtDlpSettings.svelte';
+  import SelfService from '$lib/settings/admin/SelfService.svelte';
+  import EmailSettings from '$lib/settings/admin/EmailSettings.svelte';
+  import BackupServer from '$lib/settings/admin/BackupServer.svelte';
+  import RestoreServer from '$lib/settings/admin/RestoreServer.svelte';
 
   let tab = $state<'user' | 'admin'>('user');
   let isAdmin = $state(false);
@@ -113,7 +122,33 @@
         <SharedLinks />
       </SettingsSection>
     {:else}
-      <p class="item_container-text p-4">Admin settings come later in stage 3. The stock Pinepods web UI has them meanwhile.</p>
+      <SettingsSection icon="ph-users" title={t('settings.user_management')} info={t('settings.user_management_description')}>
+        <UserManagement />
+      </SettingsSection>
+      <SettingsSection icon="ph-lock-key" title={t('settings.oidc_sso_settings')}>
+        <OidcSettings />
+      </SettingsSection>
+      <SettingsSection icon="ph-broadcast" title={t('update_services.title')} info={t('update_services.description')}>
+        <UpdateServices />
+      </SettingsSection>
+      <SettingsSection icon="ph-download-simple" title={t('settings.download_settings')} info={t('download_settings.server_download_description')}>
+        <DownloadSettings />
+      </SettingsSection>
+      <SettingsSection icon="ph-youtube-logo" title={t('settings.ytdlp_management')}>
+        <YtDlpSettings />
+      </SettingsSection>
+      <SettingsSection icon="ph-gear" title={t('settings.user_self_service_settings')} info={t('user_self_service.self_service_description')}>
+        <SelfService />
+      </SettingsSection>
+      <SettingsSection icon="ph-envelope" title={t('settings.email_settings')} info={t('email_settings.email_settings_description')}>
+        <EmailSettings />
+      </SettingsSection>
+      <SettingsSection icon="ph-database" title={t('settings.backup_server')}>
+        <BackupServer />
+      </SettingsSection>
+      <SettingsSection icon="ph-database-backup" title={t('settings.restore_server')}>
+        <RestoreServer />
+      </SettingsSection>
     {/if}
   </div>
 </div>

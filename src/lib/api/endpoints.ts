@@ -866,13 +866,13 @@ export interface MyUserInfo {
   language: string;
 }
 export const getMyUserInfo = () => unwrap<MyUserInfo>(api().GET('/api/data/my_user_info/{user_id}', { params: { path: { user_id: uid() } } }));
-export const setUsername = (new_username: string) => unwrap(api().PUT('/api/data/user/set_username', { body: { user_id: uid(), new_username } }));
-export const setEmail = (new_email: string) => unwrap(api().PUT('/api/data/user/set_email', { body: { user_id: uid(), new_email } }));
+export const setUsername = (new_username: string, user_id = uid()) => unwrap(api().PUT('/api/data/user/set_username', { body: { user_id, new_username } }));
+export const setEmail = (new_email: string, user_id = uid()) => unwrap(api().PUT('/api/data/user/set_email', { body: { user_id, new_email } }));
 // The server reads new_name from the query string (not in the spec).
-export const setFullname = (new_name: string) =>
-  unwrap(api().PUT('/api/data/set_fullname/{user_id}', { params: { path: { user_id: uid() }, query: { new_name } as never } }));
+export const setFullname = (new_name: string, user_id = uid()) =>
+  unwrap(api().PUT('/api/data/set_fullname/{user_id}', { params: { path: { user_id }, query: { new_name } as never } }));
 /** `hash_pw` is an Argon2id PHC string (see util/password.ts). */
-export const setPassword = (hash_pw: string) => unwrap(api().PUT('/api/data/set_password/{user_id}', { params: { path: { user_id: uid() } }, body: { hash_pw } }));
+export const setPassword = (hash_pw: string, user_id = uid()) => unwrap(api().PUT('/api/data/set_password/{user_id}', { params: { path: { user_id } }, body: { hash_pw } }));
 export const updateTimezone = (timezone: string) => unwrap(api().PUT('/api/data/update_timezone', { body: { user_id: uid(), timezone } }));
 export const updateDateFormat = (date_format: string) => unwrap(api().PUT('/api/data/update_date_format', { body: { user_id: uid(), date_format } }));
 export const updateTimeFormat = (hour_pref: number) => unwrap(api().PUT('/api/data/update_time_format', { body: { user_id: uid(), hour_pref } }));
@@ -1142,3 +1142,138 @@ export const getSharedLinks = async () =>
     .shared_links ?? [];
 export const deleteSharedLink = (share_code: string) => unwrap(api().DELETE('/api/data/delete_shared_link', { body: { share_code } }));
 export const extendSharedLink = (share_code: string, days: number) => unwrap(api().PUT('/api/data/extend_shared_link', { body: { share_code, days } }));
+
+// ---------- Admin settings: small sections ----------
+
+export const toggleSelfService = () => unwrap(api().POST('/api/data/enable_disable_self_service'));
+
+export type UpdateServices = S['UpdateServices'];
+export const getUpdateServices = () => unwrap<UpdateServices>(api().GET('/api/data/update_services'));
+export const setPodping = (enabled: boolean) => unwrap<UpdateServices>(api().PUT('/api/data/update_services/podping', { body: { enabled } }));
+
+export const getServerDownloadStatus = async () => !!(await unwrap<boolean>(api().GET('/api/data/download_status')));
+export const toggleServerDownloads = () => unwrap(api().POST('/api/data/enable_disable_downloads'));
+export type DownloadMetadataSettings = S['DownloadMetadataSettings'];
+export const getDownloadMetadataSettings = () => unwrap<DownloadMetadataSettings>(api().GET('/api/data/download_metadata_settings'));
+export const setDownloadMetadataSettings = (body: DownloadMetadataSettings) => unwrap(api().POST('/api/data/download_metadata_settings', { body }));
+
+export interface YtDlpInfo {
+  settings: { auto_update: boolean; channel: string; last_updated?: string | null; last_result?: string | null };
+  version?: string | null;
+}
+/** Admin-only. */
+export const getYtDlpSettings = () => unwrap<YtDlpInfo>(api().GET('/api/data/ytdlp_settings'));
+export const updateYtDlpSettings = (auto_update: boolean, channel: string) =>
+  unwrap(api().POST('/api/data/ytdlp_settings', { body: { auto_update, channel } }));
+export const triggerYtDlpUpdate = () => unwrap<{ success: boolean; detail: string }>(api().POST('/api/data/ytdlp_update'));
+
+// ---------- Admin settings: email ----------
+
+export const getEmailSettings = () => unwrap<S['EmailSettingsResponse']>(api().GET('/api/data/get_email_settings'));
+export interface EmailForm {
+  server_name: string;
+  server_port: string;
+  from_email: string;
+  send_mode: string;
+  encryption: string;
+  auth_required: boolean;
+  email_username: string;
+  email_password: string;
+}
+export const saveEmailSettings = (email_settings: EmailForm) => unwrap(api().POST('/api/data/save_email_settings', { body: { email_settings } }));
+export const sendTestEmail = (s: EmailForm, to_email: string, message: string) =>
+  unwrap(api().POST('/api/data/send_test_email', { body: { ...s, to_email, message } }));
+
+// ---------- Admin settings: users ----------
+
+export interface ServerUser {
+  userid: number;
+  fullname: string;
+  username: string;
+  email: string;
+  /** The spec says boolean; older servers send 0/1. */
+  isadmin: boolean | number;
+}
+export const getUsers = () => unwrap<ServerUser[]>(api().GET('/api/data/get_user_info'));
+export const addUser = (u: { fullname: string; username: string; email: string; hash_pw: string }) => unwrap(api().POST('/api/data/add_user', { body: u }));
+export const deleteUser = (user_id: number) => unwrap(api().DELETE('/api/data/user/delete/{user_id}', { params: { path: { user_id } } }));
+export const setIsAdmin = (user_id: number, isadmin: boolean) => unwrap(api().PUT('/api/data/user/set_isadmin', { body: { user_id, isadmin } }));
+/** Whether the user is the last admin (who can't lose admin rights). */
+export const isFinalAdmin = async (user_id: number) =>
+  !!(await unwrap<{ final_admin: boolean }>(api().GET('/api/data/user/final_admin/{user_id}', { params: { path: { user_id } } }))).final_admin;
+
+// ---------- Admin settings: backup / restore ----------
+
+export interface BackupFile {
+  filename: string;
+  size: number;
+  /** Unix seconds. */
+  modified: number;
+}
+// Bodies include user_id like upstream; the spec lists empty objects for some.
+export async function listBackupFiles(): Promise<{ files: BackupFile[]; sqlite: boolean }> {
+  const d = await unwrap<any>(api().POST('/api/data/list_backup_files', { body: { user_id: uid() } as never }));
+  return { files: Array.isArray(d?.backup_files) ? d.backup_files : [], sqlite: d?.database_type === 'sqlite' };
+}
+export const getScheduledBackup = () =>
+  unwrap<{ enabled?: boolean; schedule?: string; retention_count?: number | null; updated_at?: string | null }>(
+    api().POST('/api/data/get_scheduled_backup', { body: { user_id: uid() } })
+  );
+export const scheduleBackup = (cron_schedule: string, enabled: boolean, retention_count: number | null) =>
+  unwrap(api().POST('/api/data/schedule_backup', { body: { user_id: uid(), cron_schedule, enabled, retention_count } }));
+export const manualBackupToDirectory = () =>
+  unwrap<{ filename?: string }>(api().POST('/api/data/manual_backup_to_directory', { body: { user_id: uid() } as never }));
+export const deleteBackupFile = (backup_filename: string) =>
+  unwrap(api().POST('/api/data/delete_backup_file', { body: { user_id: uid(), backup_filename } as never }));
+/** The whole database as SQL text (database_pass is ignored for SQLite). */
+export async function backupServer(database_pass: string): Promise<string> {
+  const { data, response } = await api().POST('/api/data/backup_server', { body: { database_pass }, parseAs: 'text' });
+  if (!response.ok) throw new Error((data as unknown as string) || response.statusText);
+  return data as unknown as string;
+}
+export const restoreBackupFile = (backup_filename: string) =>
+  unwrap(api().POST('/api/data/restore_backup_file', { body: { user_id: uid(), backup_filename } as never }));
+/** Multipart upload of an SQL backup. */
+export async function restoreServer(file: File, database_pass: string) {
+  const form = new FormData();
+  form.append('database_pass', database_pass);
+  form.append('backup_file', file);
+  const r = await fetch(`${session.serverName}/api/data/restore_server`, { method: 'POST', headers: { 'Api-Key': session.apiKey }, body: form });
+  const text = await r.text().catch(() => '');
+  if (!r.ok) throw new Error(text || r.statusText);
+  return text;
+}
+
+// ---------- Admin settings: OIDC providers ----------
+
+export interface OidcProvider {
+  provider_id: number;
+  provider_name: string;
+  client_id: string;
+  authorization_url: string;
+  token_url: string;
+  user_info_url: string;
+  button_text: string;
+  scope: string;
+  button_color: string;
+  button_text_color: string;
+  icon_svg?: string | null;
+  name_claim?: string | null;
+  email_claim?: string | null;
+  username_claim?: string | null;
+  roles_claim?: string | null;
+  user_role?: string | null;
+  admin_role?: string | null;
+  enabled: boolean;
+  initialized_from_env: boolean;
+}
+export type OidcProviderForm = S['OidcProviderRequest'];
+export const listOidcProviders = async () =>
+  (await unwrap<{ providers: OidcProvider[] }>(api().GET('/api/data/list_oidc_providers'))).providers ?? [];
+export const addOidcProvider = (body: OidcProviderForm) => unwrap(api().POST('/api/data/add_oidc_provider', { body }));
+export const updateOidcProvider = (provider_id: number, body: OidcProviderForm) =>
+  unwrap(api().PUT('/api/data/update_oidc_provider/{provider_id}', { params: { path: { provider_id } }, body }));
+/** The body is the bare provider id. */
+export const removeOidcProvider = (provider_id: number) => unwrap(api().POST('/api/data/remove_oidc_provider', { body: provider_id }));
+export const discoverOidc = (url: string) =>
+  unwrap<{ authorization_endpoint: string; token_endpoint: string; userinfo_endpoint: string }>(api().POST('/api/data/oidc_discovery', { body: { url } }));
