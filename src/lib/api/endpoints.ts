@@ -1277,3 +1277,118 @@ export const updateOidcProvider = (provider_id: number, body: OidcProviderForm) 
 export const removeOidcProvider = (provider_id: number) => unwrap(api().POST('/api/data/remove_oidc_provider', { body: provider_id }));
 export const discoverOidc = (url: string) =>
   unwrap<{ authorization_endpoint: string; token_endpoint: string; userinfo_endpoint: string }>(api().POST('/api/data/oidc_discovery', { body: { url } }));
+
+// ---------- Per-podcast settings (the podcast page's settings window) ----------
+
+const pod = (podcast_id: number) => ({ user_id: uid(), podcast_id });
+
+export const getAutoDownload = async (podcast_id: number) =>
+  !!(await unwrap<{ auto_download: boolean }>(api().POST('/api/data/get_auto_download_status', { body: pod(podcast_id) }))).auto_download;
+export const setAutoDownload = (podcast_id: number, auto_download: boolean) =>
+  unwrap(api().POST('/api/data/enable_auto_download', { body: { ...pod(podcast_id), auto_download } }));
+export const setAutoPlayNext = (podcast_id: number, auto_play_next: boolean) =>
+  unwrap(api().POST('/api/data/enable_auto_play_next', { body: { ...pod(podcast_id), auto_play_next } }));
+export const getAutoQueue = async (podcast_id: number) =>
+  !!(await unwrap<{ auto_queue: boolean }>(api().POST('/api/data/get_auto_queue_status', { body: pod(podcast_id) }))).auto_queue;
+export const setAutoQueue = (podcast_id: number, auto_queue: boolean) =>
+  unwrap(api().POST('/api/data/enable_auto_queue', { body: { ...pod(podcast_id), auto_queue } }));
+export const getPodcastNotifications = async (podcast_id: number) =>
+  !!(await unwrap<{ enabled: boolean }>(api().POST('/api/data/podcast/notification_status', { body: pod(podcast_id) }))).enabled;
+export const setPodcastNotifications = (podcast_id: number, enabled: boolean) =>
+  unwrap(api().PUT('/api/data/podcast/toggle_notifications', { body: { ...pod(podcast_id), enabled } }));
+export const getPodcastFavorite = async (podcast_id: number) =>
+  !!(await unwrap<{ is_favorite: boolean }>(api().POST('/api/data/podcast/favorite_status', { body: pod(podcast_id) }))).is_favorite;
+export const setPodcastFavorite = (podcast_id: number, is_favorite: boolean) =>
+  unwrap(api().PUT('/api/data/podcast/toggle_favorite', { body: { ...pod(podcast_id), is_favorite } }));
+
+export const setPodcastPlaybackSpeed = (podcast_id: number, playback_speed: number) =>
+  unwrap(api().POST('/api/data/podcast/set_playback_speed', { body: { ...pod(podcast_id), playback_speed } }));
+export const clearPodcastPlaybackSpeed = (podcast_id: number) =>
+  unwrap(api().POST('/api/data/clear_podcast_playback_speed', { body: pod(podcast_id) }));
+export const setSkipTimes = (podcast_id: number, start_skip: number, end_skip: number) =>
+  unwrap(api().POST('/api/data/adjust_skip_times', { body: { ...pod(podcast_id), start_skip, end_skip } }));
+
+export const getPodcastAutoDeleteDays = (podcast_id: number) =>
+  unwrap<{ days: number; customized: boolean }>(api().POST('/api/data/get_auto_download_delete_days', { body: pod(podcast_id) }));
+export const setPodcastAutoDeleteDays = (podcast_id: number, days: number) =>
+  unwrap(api().POST('/api/data/podcast/set_auto_download_delete_days', { body: { ...pod(podcast_id), days } }));
+export const clearPodcastAutoDeleteDays = (podcast_id: number) =>
+  unwrap(api().POST('/api/data/clear_podcast_auto_download_delete_days', { body: pod(podcast_id) }));
+/** With no podcast this is the user's default. */
+export const getDeleteOnComplete = (podcast_id?: number) =>
+  unwrap<{ enabled: boolean; customized: boolean }>(
+    api().POST('/api/data/get_auto_delete_on_complete', { body: { user_id: uid(), podcast_id: podcast_id ?? null } })
+  );
+/** `null` goes back to the user's default. */
+export const setPodcastDeleteOnComplete = (podcast_id: number, enabled: boolean | null) =>
+  unwrap(api().POST('/api/data/podcast/set_auto_delete_on_complete', { body: { ...pod(podcast_id), enabled } }));
+
+export const getPodcastCoverPref = async (podcast_id: number) =>
+  !!(await unwrap<{ use_podcast_covers: boolean }>(
+    api().GET('/api/data/user/get_podcast_cover_preference', { params: { query: pod(podcast_id) as never } })
+  )).use_podcast_covers;
+export const setPodcastCoverPref = (podcast_id: number, use_podcast_covers: boolean) =>
+  unwrap(api().POST('/api/data/user/set_global_podcast_cover_preference', { body: { ...pod(podcast_id), use_podcast_covers } }));
+
+export const getSilenceTrim = (podcast_id: number) =>
+  unwrap<{ enabled: boolean; threshold: number }>(api().GET('/api/data/get_silence_trim', { params: { query: pod(podcast_id) } }));
+export const setSilenceTrim = (podcast_id: number, enabled: boolean, threshold: number) =>
+  unwrap(api().POST('/api/data/adjust_silence_trim', { body: { ...pod(podcast_id), enabled, threshold } }));
+
+type FlagPath = '/api/data/get_auto_transcribe' | '/api/data/get_auto_ad_detect' | '/api/data/get_ad_skip_auto_activate';
+const getFlag = async (path: FlagPath, podcast_id: number) =>
+  !!(await unwrap<{ enabled: boolean }>(api().GET(path, { params: { query: pod(podcast_id) } }))).enabled;
+export const getAutoTranscribe = (id: number) => getFlag('/api/data/get_auto_transcribe', id);
+export const getAutoAdDetect = (id: number) => getFlag('/api/data/get_auto_ad_detect', id);
+export const getAdSkipAutoActivate = (id: number) => getFlag('/api/data/get_ad_skip_auto_activate', id);
+export const setAutoTranscribe = (podcast_id: number, enabled: boolean) =>
+  unwrap(api().POST('/api/data/adjust_auto_transcribe', { body: { ...pod(podcast_id), enabled } }));
+export const setAutoAdDetect = (podcast_id: number, enabled: boolean) =>
+  unwrap(api().POST('/api/data/adjust_auto_ad_detect', { body: { ...pod(podcast_id), enabled } }));
+export const setAdSkipAutoActivate = (podcast_id: number, enabled: boolean) =>
+  unwrap(api().POST('/api/data/adjust_ad_skip_auto_activate', { body: { ...pod(podcast_id), enabled } }));
+
+/** YouTube channels: days to keep downloaded audio (0 = no limit). */
+export const getFeedCutoffDays = async (podcast_id: number) =>
+  (await unwrap<{ feed_cutoff_days: number }>(api().GET('/api/data/get_feed_cutoff_days', { params: { query: pod(podcast_id) } }))).feed_cutoff_days ?? 0;
+export const setFeedCutoffDays = (podcast_id: number, feed_cutoff_days: number) =>
+  unwrap(api().POST('/api/data/update_feed_cutoff_days', { body: { ...pod(podcast_id), feed_cutoff_days } }));
+export type VideoFilter = { min_minutes: number | null; max_minutes: number | null; title_contains: string | null };
+export const getVideoFilter = (podcast_id: number) =>
+  unwrap<VideoFilter>(api().GET('/api/data/youtube_video_filter', { params: { query: pod(podcast_id) } }));
+export const setVideoFilter = (podcast_id: number, f: VideoFilter) =>
+  unwrap<VideoFilter>(api().POST('/api/data/update_youtube_video_filter', { body: { ...pod(podcast_id), ...f } }));
+
+export const addCategory = (podcast_id: number, category: string) =>
+  unwrap(api().POST('/api/data/add_category', { body: { ...pod(podcast_id), category } }));
+export const removeCategory = (podcast_id: number, category: string) =>
+  unwrap(api().POST('/api/data/remove_category', { body: { ...pod(podcast_id), category } }));
+
+/** Only the fields being changed; anything left out stays as it is. */
+export type PodcastInfoEdit = Partial<{
+  feed_url: string;
+  username: string;
+  password: string;
+  podcast_name: string;
+  description: string;
+  author: string;
+  artwork_url: string;
+  website_url: string;
+  podcast_index_id: number;
+}>;
+export const updatePodcastInfo = (podcast_id: number, edit: PodcastInfoEdit) =>
+  unwrap<{ success: boolean; message: string }>(api().PUT('/api/data/update_podcast_info', { body: { ...pod(podcast_id), ...edit } }));
+/** Read the feed again; `reset_edits` also drops the user's own edits. */
+export const refreshPodcastDetails = (podcast_id: number, reset_edits: boolean) =>
+  unwrap<{ success: boolean; message: string }>(api().POST('/api/data/refresh_podcast_details', { body: { podcast_id, reset_edits } }));
+
+export const getMergedPodcasts = async (podcast_id: number) =>
+  (await unwrap<{ merged_podcast_ids: number[] }>(api().GET('/api/data/{podcast_id}/merged', { params: { path: { podcast_id } } }))).merged_podcast_ids ?? [];
+export const mergePodcasts = (podcast_id: number, secondary_podcast_ids: number[]) =>
+  unwrap<{ success: boolean; message: string }>(
+    api().POST('/api/data/{podcast_id}/merge', { params: { path: { podcast_id } }, body: { secondary_podcast_ids } })
+  );
+export const unmergePodcast = (podcast_id: number, target_podcast_id: number) =>
+  unwrap<{ success: boolean; message: string }>(
+    api().POST('/api/data/{podcast_id}/unmerge/{target_podcast_id}', { params: { path: { podcast_id, target_podcast_id } } })
+  );

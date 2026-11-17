@@ -124,6 +124,10 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
     { userid: 4, fullname: 'Other', username: 'other', email: 'other@test.com', isadmin: 0 }
   ];
   const oidc: any[] = [];
+  // Per-podcast settings: user edits to podcast info and categories, merges, speed override.
+  const podEdits: Record<number, Record<string, unknown>> = {};
+  const merged: Record<number, number[]> = {};
+  let speedOverride: number | null = null;
   const wav = silentWav();
 
   const json = (route: Route, body: unknown, status = 200) =>
@@ -220,7 +224,9 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
         return json(route, { pods: PODCASTS });
       case 'get_podcast_details': {
         const pod = PODCASTS.find((x) => x.podcastid === Number(query.podcast_id))!;
-        return json(route, { details: { ...pod, autodownload: false, isyoutubechannel: false, notificationsenabled: false, playbackspeed: 1, startskip: 0, endskip: 0 } });
+        return json(route, {
+          details: { ...pod, ...podEdits[Number(query.podcast_id)], autodownload: false, isyoutubechannel: false, notificationsenabled: false, playbackspeed: 1, startskip: 0, endskip: 0 }
+        });
       }
       case 'podcast_episodes': {
         let eps = EPISODES.filter((e) => e.podcastid === Number(query.podcast_id));
@@ -278,7 +284,7 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
         return json(route, { podcast_id: e?.podcastid ?? 0 });
       }
       case 'get_play_episode_details':
-        return json(route, { playback_speed: 1, start_skip: 0, end_skip: 0, playback_speed_customized: false });
+        return json(route, { playback_speed: speedOverride ?? 1, start_skip: 0, end_skip: 0, playback_speed_customized: speedOverride !== null });
       case 'get_auto_play_next_status':
         return json(route, { auto_play_next: false });
       case 'get_default_volume':
@@ -510,9 +516,52 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
       case '/api/sync/server/app-passwords':
       case '/api/sync/devices':
         return json(route, []);
-      default:
+      // --- per-podcast settings ---
+      case 'get_auto_download_status':
+        return json(route, { auto_download: false });
+      case 'get_auto_queue_status':
+        return json(route, { auto_queue: false });
+      case 'podcast/notification_status':
+        return json(route, { enabled: false });
+      case 'podcast/favorite_status':
+        return json(route, { is_favorite: false });
+      case 'get_silence_trim':
+        return json(route, { enabled: false, threshold: 2 });
+      case 'podcast/set_playback_speed':
+        speedOverride = body.playback_speed;
+        return json(route, { detail: 'ok' });
+      case 'clear_podcast_playback_speed':
+        speedOverride = null;
+        return json(route, { detail: 'ok' });
+      case 'add_category':
+      case 'remove_category': {
+        const pod = PODCASTS.find((x) => x.podcastid === body.podcast_id)!;
+        const edits = (podEdits[pod.podcastid] ??= {});
+        const cats = Object.values((edits.categories ?? pod.categories) as Record<string, string>).filter((c) => c !== body.category);
+        if (p === 'add_category') cats.push(body.category);
+        edits.categories = Object.fromEntries(cats.map((c, i) => [String(i), c]));
+        return json(route, { detail: 'ok' });
+      }
+      case 'update_podcast_info': {
+        const edits = (podEdits[body.podcast_id] ??= {});
+        if (body.podcast_name) edits.podcastname = body.podcast_name;
+        if (body.author) edits.author = body.author;
+        return json(route, { success: true, message: 'Podcast updated' });
+      }
+      case 'refresh_podcast_details':
+        if (body.reset_edits) delete podEdits[body.podcast_id];
+        return json(route, { success: true, message: 'ok' });
+      default: {
+        const m = p.match(/^(\d+)\/(merged|merge|unmerge\/(\d+))$/);
+        if (m) {
+          const ids = (merged[Number(m[1])] ??= []);
+          if (m[2] === 'merge') ids.push(...body.secondary_podcast_ids);
+          if (m[3]) ids.splice(ids.indexOf(Number(m[3])), 1);
+          return json(route, m[2] === 'merged' ? { merged_podcast_ids: ids } : { success: true, message: 'Done' });
+        }
         // Bookkeeping endpoints (history, listen time, play count...) just succeed.
         return json(route, { detail: 'ok' });
+      }
     }
   });
 

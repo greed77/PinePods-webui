@@ -27,6 +27,7 @@
     isVideo = false,
     ontoggle,
     ondownload,
+    onsettings,
     people
   }: {
     podcast: HeaderPodcast;
@@ -35,6 +36,8 @@
     isVideo?: boolean;
     ontoggle: () => void;
     ondownload?: () => void;
+    /** Opens the per-podcast settings (subscribed podcasts). */
+    onsettings?: () => void;
     /** Hosts and guests (subscribed, non-YouTube podcasts). */
     people?: { people: CreditedPerson[]; guests: CreditedPerson[] } | null;
   } = $props();
@@ -94,6 +97,9 @@
       {#if subscribed && ondownload}
         <button onclick={ondownload} title="Download all episodes" class="ep-mobile-action-btn"><i class="ph ph-download text-2xl"></i></button>
       {/if}
+      {#if subscribed && onsettings}
+        <button onclick={onsettings} title="Podcast settings" class="ep-mobile-action-btn"><i class="ph ph-gear text-2xl"></i></button>
+      {/if}
     </div>
     <div class="ep-mobile-desc-section">{@render description('')}</div>
     {#if people}
@@ -142,6 +148,9 @@
               <button onclick={ondownload} title={t('episodes_layout.download_all_episodes')} class="pd-icon-btn"><i class="ph ph-download text-2xl"></i></button>
             {/if}
             <button onclick={() => openUrl(d.websiteurl)} title="Visit external podcast website" class="pd-icon-btn"><i class="ph ph-globe text-2xl"></i></button>
+            {#if subscribed && onsettings}
+              <button onclick={onsettings} title={t('episodes_layout.podcast_specific_settings')} class="pd-icon-btn"><i class="ph ph-gear text-2xl"></i></button>
+            {/if}
           </div>
         </div>
       </div>

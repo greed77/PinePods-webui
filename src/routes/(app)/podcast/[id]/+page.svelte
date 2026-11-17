@@ -1,8 +1,8 @@
 <script lang="ts">
   // Port of upstream pages/episode_layout.rs for a subscribed podcast: banner header
   // (or compact mobile header), server-side search/sort/filter with paging, select
-  // mode with bulk actions, download-all and unsubscribe. Per-podcast settings,
-  // RSS link, people, merge and funding links come in a later stage.
+  // mode with bulk actions, download-all, unsubscribe, hosts, and the per-podcast
+  // settings and edit/merge windows. RSS link and funding links come later.
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import * as E from '$lib/api/endpoints';
@@ -15,6 +15,8 @@
   import PodcastHeader from '$lib/components/PodcastHeader.svelte';
   import EpisodeListItem from '$lib/components/EpisodeListItem.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import PodcastSettingsModal from '$lib/components/podcast/PodcastSettingsModal.svelte';
+  import PodcastEditModal from '$lib/components/podcast/PodcastEditModal.svelte';
 
   const PAGE = 50;
   const id = $derived(Number(page.params.id));
@@ -27,7 +29,7 @@
   let loadingMore = $state(false);
   let subscribed = $state(true);
   let busy = $state(false);
-  let modal = $state<'delete' | 'download' | null>(null);
+  let modal = $state<'delete' | 'download' | 'settings' | 'edit' | null>(null);
 
   // Filters, remembered per podcast like upstream (`podcast_{id}_sort_preference`).
   let sort = $state('newest');
@@ -197,6 +199,18 @@
     }
   }
 
+  // After an edit in the settings windows: fetch the details again without the
+  // loading screen or resetting the episode filters.
+  async function reloadDetails() {
+    const pid = id;
+    try {
+      const d = await E.getPodcastDetails(pid);
+      if (pid === id) details = d;
+    } catch (e) {
+      console.warn('Error reloading podcast details', e);
+    }
+  }
+
   async function downloadAll() {
     try {
       const r: any = await E.downloadAllPodcast(id, isYoutube);
@@ -229,12 +243,19 @@
       onyes={downloadAll}
       onclose={() => (modal = null)}
     />
+  {:else if modal === 'settings' && details}
+    <PodcastSettingsModal podcast={details} onclose={() => (modal = null)} onedit={() => (modal = 'edit')} onchanged={reloadDetails} />
+  {:else if modal === 'edit' && details}
+    <PodcastEditModal podcast={details} onclose={() => (modal = null)} onchanged={reloadDetails} />
   {/if}
 
   {#if loading}
     <Loading />
   {:else if details}
-    <PodcastHeader podcast={details} {subscribed} {busy} {isVideo} ontoggle={toggleSubscription} ondownload={() => (modal = 'download')} {people} />
+    <PodcastHeader podcast={details} {subscribed} {busy} {isVideo} ontoggle={toggleSubscription} ondownload={() => (modal = 'download')}
+      onsettings={() => (modal = 'settings')}
+      {people}
+    />
 
     <div class="pfb-section">
       <div class="pfb-bar">

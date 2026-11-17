@@ -4,7 +4,11 @@
   import { t } from '$lib/i18n/index.svelte';
   import FallbackImage from './FallbackImage.svelte';
 
-  let { selected = $bindable(), podcasts }: { selected: number[]; podcasts: Podcast[] } = $props();
+  let {
+    selected = $bindable(),
+    podcasts,
+    placeholder
+  }: { selected: number[]; podcasts: Podcast[]; /** Shown while nothing is selected. */ placeholder?: string } = $props();
   let open = $state(false);
   let root: HTMLDivElement;
 
@@ -27,7 +31,7 @@
     <div class="flex items-center flex-grow">
       <span class="flex-grow text-left">
         {selected.length === 0
-          ? t('playlists.filter_by_podcasts_optional')
+          ? (placeholder ?? t('playlists.filter_by_podcasts_optional'))
           : `${selected.length} ${selected.length === 1 ? t('playlists.podcast') : t('playlists.podcasts')} ${t('playlists.selected')}`}
       </span>
       <i class="ph ph-caret-down transition-transform duration-200 {open ? 'rotate-180' : ''}"></i>
