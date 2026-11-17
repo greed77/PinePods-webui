@@ -71,6 +71,36 @@ test('editing podcast info sends only the changed fields', async ({ page, api })
   await expect(page.locator('.pd-banner-title')).toHaveText('Alpha Renamed');
 });
 
+test('the RSS window shows a link for just this podcast and copies it', async ({ page, api, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/podcast/86');
+  await page.getByTitle('Get RSS Feed URL').click();
+  const dialog = page.getByRole('dialog', { name: 'RSS Feed URL' });
+  const link = dialog.locator('#rss_link');
+  await expect(link).toHaveValue(/\/rss\/3\?api_key=pod-key-86&podcast_id=86$/);
+  expect(api.called('get_rss_key')[0].query).toEqual({ user_id: '3', podcast_id: '86' });
+  await dialog.getByRole('button', { name: 'Copy' }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await link.inputValue());
+  // RSS feeds are off in the mock, so the window points to the setting.
+  await dialog.getByRole('link', { name: 'Enable RSS Feeds' }).click();
+  await expect(page).toHaveURL(/\/settings\?section=rss_feeds$/);
+  await expect(page.locator('#settings-rss_feeds')).toBeInViewport();
+});
+
+test('funding links from the feed show as buttons; non-web links are dropped', async ({ page, context }) => {
+  await page.goto('/podcast/86');
+  await expect(page.locator('.pd-banner-actions').getByRole('button', { name: 'Support Alpha' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Not a link' })).toHaveCount(0);
+  // The link opens in a new tab, so route it for the whole context.
+  await context.route('https://support.example/**', (r) => r.fulfill({ status: 200, body: 'thanks' }));
+  const popup = page.waitForEvent('popup');
+  await page.getByRole('button', { name: 'Support Alpha' }).click();
+  expect((await popup).url()).toBe('https://support.example/alpha');
+  await page.goto('/podcast/87');
+  await expect(page.locator('.pd-banner-title')).toHaveText('Beta Cast');
+  await expect(page.locator('.pd-banner-actions .ph-money-wavy')).toHaveCount(0);
+});
+
 test('another podcast can be merged in and unmerged again', async ({ page, api }) => {
   const dialog = await openSettings(page);
   await dialog.getByRole('button', { name: 'Edit Podcast Info' }).click();

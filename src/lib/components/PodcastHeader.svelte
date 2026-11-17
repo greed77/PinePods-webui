@@ -7,7 +7,7 @@
   import { t } from '$lib/i18n/index.svelte';
   import FallbackImage from './FallbackImage.svelte';
   import PeopleStrip from './PeopleStrip.svelte';
-  import type { CreditedPerson } from '$lib/api/endpoints';
+  import type { CreditedPerson, FundingLink } from '$lib/api/endpoints';
 
   interface HeaderPodcast {
     podcastname: string;
@@ -28,6 +28,8 @@
     ontoggle,
     ondownload,
     onsettings,
+    onrss,
+    funding = [],
     people
   }: {
     podcast: HeaderPodcast;
@@ -38,6 +40,10 @@
     ondownload?: () => void;
     /** Opens the per-podcast settings (subscribed podcasts). */
     onsettings?: () => void;
+    /** Opens the podcast's RSS feed link (subscribed podcasts). */
+    onrss?: () => void;
+    /** The feed's funding links (http(s) only), one button each. */
+    funding?: FundingLink[];
     /** Hosts and guests (subscribed, non-YouTube podcasts). */
     people?: { people: CreditedPerson[]; guests: CreditedPerson[] } | null;
   } = $props();
@@ -74,6 +80,14 @@
   </div>
 {/snippet}
 
+{#snippet fundingButtons(cls: string)}
+  {#each funding as f (f.url)}
+    <button onclick={() => openUrl(f.url)} title={f.description || 'Support this podcast'} aria-label={f.description || 'Support this podcast'} class={cls}>
+      <i class="ph ph-money-wavy text-2xl"></i>
+    </button>
+  {/each}
+{/snippet}
+
 {#if isMobile}
   <div class="mobile-layout ep-mobile-pod-header">
     <div class="ep-mobile-header">
@@ -97,9 +111,13 @@
       {#if subscribed && ondownload}
         <button onclick={ondownload} title="Download all episodes" class="ep-mobile-action-btn"><i class="ph ph-download text-2xl"></i></button>
       {/if}
+      {#if subscribed && onrss}
+        <button onclick={onrss} title="Get RSS Feed URL" class="ep-mobile-action-btn"><i class="ph ph-rss text-2xl"></i></button>
+      {/if}
       {#if subscribed && onsettings}
         <button onclick={onsettings} title="Podcast settings" class="ep-mobile-action-btn"><i class="ph ph-gear text-2xl"></i></button>
       {/if}
+      {@render fundingButtons('ep-mobile-action-btn')}
     </div>
     <div class="ep-mobile-desc-section">{@render description('')}</div>
     {#if people}
@@ -151,6 +169,10 @@
             {#if subscribed && onsettings}
               <button onclick={onsettings} title={t('episodes_layout.podcast_specific_settings')} class="pd-icon-btn"><i class="ph ph-gear text-2xl"></i></button>
             {/if}
+            {#if subscribed && onrss}
+              <button onclick={onrss} title="Get RSS Feed URL" class="pd-icon-btn"><i class="ph ph-rss text-2xl"></i></button>
+            {/if}
+            {@render fundingButtons('pd-icon-btn')}
           </div>
         </div>
       </div>

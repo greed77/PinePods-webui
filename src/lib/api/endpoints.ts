@@ -765,6 +765,21 @@ export async function getPodcastPeople(podcast_id: number) {
   };
 }
 
+export interface FundingLink {
+  url: string;
+  description: string;
+}
+/**
+ * The feed's Podcasting 2.0 funding links. The URLs come from the feed, so only
+ * http(s) ones are kept (no javascript: links).
+ */
+export async function getPodcastFunding(podcast_id: number): Promise<FundingLink[]> {
+  const d = await unwrap<any>(api().GET('/api/data/fetch_podcasting_2_pod_data', { params: { query: { podcast_id, user_id: uid() } } }));
+  return (Array.isArray(d?.funding) ? d.funding : [])
+    .filter((f: any) => typeof f?.url === 'string' && /^https?:\/\//i.test(f.url.trim()))
+    .map((f: any) => ({ url: f.url.trim(), description: String(f.description ?? '').trim() }));
+}
+
 // PodPeopleDB discovery, proxied by the server. Responses aren't in the spec;
 // shapes from upstream DiscoverHost / DiscoverPodcast / DiscoverStats.
 export interface DiscoverHost {
@@ -1096,8 +1111,9 @@ export const dismissImport = (id: number) => unwrap(api().DELETE('/api/data/feed
 
 export const getRssFeedStatus = async () => !!(await unwrap<boolean>(api().GET('/api/data/rss_feed_status')));
 export const toggleRssFeeds = async () => !!(await unwrap<{ enabled: boolean }>(api().POST('/api/data/toggle_rss_feeds'))).enabled;
-export const getRssKey = async () =>
-  (await unwrap<{ rss_key: string }>(api().GET('/api/data/get_rss_key', { params: { query: { user_id: uid() } } }))).rss_key ?? '';
+/** With a podcast, the server creates (once) a key that only reads that podcast's feed. */
+export const getRssKey = async (podcast_id?: number) =>
+  (await unwrap<{ rss_key: string }>(api().GET('/api/data/get_rss_key', { params: { query: { user_id: uid(), podcast_id } } }))).rss_key ?? '';
 
 // ---------- Settings: Podcast Index matching ----------
 

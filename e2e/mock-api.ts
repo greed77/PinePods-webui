@@ -516,6 +516,24 @@ export async function mockApi(page: Page, opts: MockOptions = {}) {
       case '/api/sync/server/app-passwords':
       case '/api/sync/devices':
         return json(route, []);
+      // --- podcast header: funding and RSS link ---
+      case 'fetch_podcasting_2_pod_data':
+        return json(route, {
+          funding:
+            query.podcast_id === '86'
+              ? [
+                  { url: 'https://support.example/alpha', description: 'Support Alpha' },
+                  { url: 'javascript:alert(1)', description: 'Not a link' }
+                ]
+              : [],
+          value: [],
+          podroll: [],
+          people: [],
+          guests: []
+        });
+      case 'get_rss_key':
+        return json(route, { rss_key: query.podcast_id ? `pod-key-${query.podcast_id}` : 'user-rss-key' });
+
       // --- per-podcast settings ---
       case 'get_auto_download_status':
         return json(route, { auto_download: false });

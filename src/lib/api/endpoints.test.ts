@@ -90,4 +90,24 @@ describe('people endpoints', () => {
     expect(p.refreshing).toBe(true);
     expect(p.external_episodes[0]).toMatchObject({ episodeid: 0, podcastid: 0, episodetitle: 'Guest', episodeurl: 'u', artworkurl: 'a' });
   });
+
+  it('getPodcastFunding keeps only http(s) links from the feed', async () => {
+    const { getPodcastFunding } = await import('./endpoints');
+    respond({
+      funding: [
+        { url: ' https://patreon.example/show ', description: 'Patreon' },
+        { url: 'javascript:alert(1)', description: 'Bad' },
+        { url: 'HTTP://tips.example', description: null },
+        { description: 'No url' }
+      ],
+      people: [],
+      guests: []
+    });
+    expect(await getPodcastFunding(1)).toEqual([
+      { url: 'https://patreon.example/show', description: 'Patreon' },
+      { url: 'HTTP://tips.example', description: '' }
+    ]);
+    respond({ detail: 'ok' });
+    expect(await getPodcastFunding(1)).toEqual([]);
+  });
 });

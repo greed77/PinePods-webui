@@ -109,7 +109,7 @@
       <SettingsSection icon="ph-warning-circle" title={t('feed_problems.title')} info={t('feed_problems.description')} id="feed_problems">
         <FeedProblems />
       </SettingsSection>
-      <SettingsSection icon="ph-wifi" title={t('settings.enable_disable_rss_feeds')} info={t('rss_feeds.rss_feed_description')}>
+      <SettingsSection icon="ph-wifi" title={t('settings.enable_disable_rss_feeds')} info={t('rss_feeds.rss_feed_description')} id="rss_feeds">
         <RssFeeds />
       </SettingsSection>
       <SettingsSection icon="ph-magnifying-glass" title={t('settings.match_podcasts_podcast_index')}>

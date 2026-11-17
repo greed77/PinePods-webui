@@ -2,7 +2,7 @@
   // Port of upstream pages/episode_layout.rs for a subscribed podcast: banner header
   // (or compact mobile header), server-side search/sort/filter with paging, select
   // mode with bulk actions, download-all, unsubscribe, hosts, and the per-podcast
-  // settings and edit/merge windows. RSS link and funding links come later.
+  // settings and edit/merge windows, the RSS feed link and funding links.
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import * as E from '$lib/api/endpoints';
@@ -17,6 +17,7 @@
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import PodcastSettingsModal from '$lib/components/podcast/PodcastSettingsModal.svelte';
   import PodcastEditModal from '$lib/components/podcast/PodcastEditModal.svelte';
+  import RssFeedModal from '$lib/components/podcast/RssFeedModal.svelte';
 
   const PAGE = 50;
   const id = $derived(Number(page.params.id));
@@ -29,7 +30,8 @@
   let loadingMore = $state(false);
   let subscribed = $state(true);
   let busy = $state(false);
-  let modal = $state<'delete' | 'download' | 'settings' | 'edit' | null>(null);
+  let modal = $state<'delete' | 'download' | 'settings' | 'edit' | 'rss' | null>(null);
+  let funding = $state<E.FundingLink[]>([]);
 
   // Filters, remembered per podcast like upstream (`podcast_{id}_sort_preference`).
   let sort = $state('newest');
@@ -52,6 +54,11 @@
     selecting = false;
     selected = new Set();
     people = null;
+    funding = [];
+    // Podcasting 2.0 funding links; most feeds have none.
+    E.getPodcastFunding(pid)
+      .then((f) => pid === id && (funding = f))
+      .catch((e) => console.warn('Error loading funding links', e));
     E.getPodcastDetails(pid)
       .then((d) => {
         details = d;
@@ -247,6 +254,8 @@
     <PodcastSettingsModal podcast={details} onclose={() => (modal = null)} onedit={() => (modal = 'edit')} onchanged={reloadDetails} />
   {:else if modal === 'edit' && details}
     <PodcastEditModal podcast={details} onclose={() => (modal = null)} onchanged={reloadDetails} />
+  {:else if modal === 'rss'}
+    <RssFeedModal podcastId={id} onclose={() => (modal = null)} />
   {/if}
 
   {#if loading}
@@ -254,6 +263,8 @@
   {:else if details}
     <PodcastHeader podcast={details} {subscribed} {busy} {isVideo} ontoggle={toggleSubscription} ondownload={() => (modal = 'download')}
       onsettings={() => (modal = 'settings')}
+      onrss={() => (modal = 'rss')}
+      {funding}
       {people}
     />
 
